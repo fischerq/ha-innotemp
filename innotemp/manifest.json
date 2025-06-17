@@ -1,0 +1,11 @@
+{
+  "domain": "innotemp",
+  "name": "Innotemp Heating Controller",
+  "documentation": "https://github.com/ha-innotemp/ha-innotemp/blob/main/README.md",
+  "issue_tracker": "https://github.com/ha-innotemp/ha-innotemp/issues",
+  "version": "0.1.0",
+  "codeowners": ["@ha-innotemp"],
+  "requirements": [],
+  "dependencies": [],
+  "iot_class": "cloud_polling"
+}
