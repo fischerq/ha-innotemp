@@ -1,0 +1,15 @@
+{
+    "domain": "innotemp",
+    "name": "Innotemp Heating Controller",
+    "codeowners": [
+      "@fischerq"
+    ],
+    "config_flow": true,
+    "documentation": "https://github.com/fischerq/ha-innotemp/README.md",
+    "iot_class": "local_push",
+    "issue_tracker": "https://github.com/fischerq/ha-innotemp/issues",
+    "requirements": [
+      "aiohttp"
+    ],
+    "version": "0.1.0"
+  }
