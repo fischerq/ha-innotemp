@@ -3,6 +3,3 @@ pythonpath = [
     "."
 ]
 asyncio_mode = "auto" # or "strict"
-
-[tool.poetry.dev-dependencies]
-black = "^22.0"
