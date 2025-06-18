@@ -2,4 +2,5 @@ pytest
 aiohttp
 pytest-asyncio
 homeassistant
+voluptuous
 pytest-homeassistant-custom-component

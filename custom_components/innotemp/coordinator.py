@@ -1,6 +1,8 @@
 """DataUpdateCoordinator for Innotemp."""
 
 from homeassistant.helpers.update_coordinator import (
+from . import DOMAIN
+from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
