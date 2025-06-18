@@ -14,11 +14,13 @@ from . import PLATFORMS  # Import PLATFORMS from __init__.py
 
 _LOGGER = logging.getLogger(__name__)
 
-DATA_SCHEMA = vol.Schema({
-    vol.Required("host"): str,
-    vol.Required("username"): str,
-    vol.Required("password"): str,
-})
+DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required("host"): str,
+        vol.Required("username"): str,
+        vol.Required("password"): str,
+    }
+)
 
 
 class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -31,14 +33,16 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Implement validation and create entry here
             # For now, just create the entry
-            return self.async_create_entry(title="Innotemp Heating Controller", data=user_input)
+            return self.async_create_entry(
+                title="Innotemp Heating Controller", data=user_input
+            )
 
-        return self.async_show_form(
-            step_id="user", data_schema=DATA_SCHEMA
-        )
+        return self.async_show_form(step_id="user", data_schema=DATA_SCHEMA)
 
 
-async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+async def async_setup_entry(
+    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
+) -> bool:
     """Set up Innotemp Heating Controller from a config entry."""
 
     hass.data.setdefault(DOMAIN, {})
@@ -58,7 +62,6 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
         _LOGGER.error("Failed to connect and fetch initial config: %s", ex)
         return False
 
-
     coordinator = InnotempDataUpdateCoordinator(hass, api_client)
 
     # Pass the coordinator's async_set_updated_data as the callback for SSE
@@ -77,7 +80,9 @@ async def async_setup_entry(hass: core.HomeAssistant, entry: config_entries.Conf
     return True
 
 
-async def async_unload_entry(hass: core.HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
+) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         api_client = hass.data[DOMAIN][entry.entry_id]["api"]
@@ -91,7 +96,6 @@ async def async_unload_entry(hass: core.HomeAssistant, entry: config_entries.Con
                 await coordinator.sse_task
             except asyncio.CancelledError:
                 pass
-
 
         hass.data[DOMAIN].pop(entry.entry_id)
 
