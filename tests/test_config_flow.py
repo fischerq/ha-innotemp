@@ -27,7 +27,11 @@ async def test_config_flow_success(hass: HomeAssistant):
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
 
-        user_input = {"host": "test_host", "username": "test_user", "password": "test_password"}
+        user_input = {
+            "host": "test_host",
+            "username": "test_user",
+            "password": "test_password",
+        }
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], user_input
         )
@@ -53,7 +57,11 @@ async def test_config_flow_failure(hass: HomeAssistant):
         assert result["type"] == FlowResultType.FORM
         assert result["step_id"] == "user"
 
-        user_input = {"host": "test_host", "username": "test_user", "password": "test_password"}
+        user_input = {
+            "host": "test_host",
+            "username": "test_user",
+            "password": "test_password",
+        }
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], user_input
         )
