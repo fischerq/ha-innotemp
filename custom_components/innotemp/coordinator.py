@@ -32,14 +32,15 @@ class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
         # Return the current state if needed, or None if not required.
         return self.data
 
-    async def start_sse_listener(self):
-        """Start the SSE listener in the API client."""
-        # Pass the coordinator's async_set_updated_data method as the callback
-        await self.api_client.async_sse_connect(self.async_set_updated_data)
-
-    async def stop_sse_listener(self):
-        """Stop the SSE listener in the API client."""
-        await self.api_client.async_sse_disconnect()
+    def __init__(
+        self, coordinator: InnotempDataUpdateCoordinator, config_entry, entity_config
+    ):
+        """Initialize the entity."""
+        super().__init__(coordinator)
+        self._config_entry = config_entry
+        self._entity_config = entity_config
+        self._attr_name = entity_config.get("label")
+        self._attr_unique_id = f"{config_entry.unique_id}_{entity_config.get('param')}"
 
 
 class InnotempCoordinatorEntity(CoordinatorEntity):

@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
-from .coordinator import InnotempDataUpdateCoordinator
+from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
 from .entity import InnotempEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,20 +35,21 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class InnotempSwitch(InnotempEntity, SwitchEntity):
+class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
     """Representation of an Innotemp Switch."""
 
     def __init__(
         self,
         coordinator: InnotempDataUpdateCoordinator,
-        room_id: str,
-        param_id: str,
-        param_data: dict,
+        config_entry: ConfigEntry,
+        entity_config: dict,
     ) -> None:
         """Initialize the switch."""
-        super().__init__(coordinator, room_id, param_id, param_data)
+        super().__init__(coordinator, config_entry, entity_config)
+        self._room_id = entity_config.get("room_id")
+        self._param_id = entity_config.get("param_id")
         self._attr_unique_id = (
-            f"{coordinator.config_entry.unique_id}_{room_id}_{param_id}"
+            f"{config_entry.unique_id}_{self._room_id}_{self._param_id}"
         )
         self._attr_name = param_data.get("label", f"Innotemp Switch {param_id}")
 
@@ -105,6 +106,7 @@ class InnotempSwitch(InnotempEntity, SwitchEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         self._update_state_from_coordinator()
+        self.async_write_ha_state()
         super()._handle_coordinator_update()
 
     def _update_state_from_coordinator(self) -> None:

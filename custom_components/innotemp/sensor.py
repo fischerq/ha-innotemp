@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator
-from .entity import InnotempEntity
+from .coordinator import InnotempCoordinatorEntity # Assuming InnotempCoordinatorEntity is in coordinator.py
 
 
 async def async_setup_entry(
@@ -27,7 +27,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class InnotempSensor(InnotempEntity, SensorEntity):
+class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
     """Representation of an Innotemp Sensor."""
 
     def __init__(
@@ -37,7 +37,7 @@ class InnotempSensor(InnotempEntity, SensorEntity):
         param_data: dict,
     ) -> None:
         """Initialize the sensor."""
-        super().__init__(coordinator, param_id, param_data)
+        super().__init__(coordinator, coordinator.config_entry, {"param": param_id, **param_data}) # Pass config_entry and entity_config
         self._attr_name = param_data.get("label", f"Innotemp Sensor {param_id}")
         self._attr_unique_id = f"{coordinator.config_entry.unique_id}_{param_id}"
         self._attr_native_unit_of_measurement = param_data.get("unit")

@@ -1,5 +1,6 @@
 """The Innotemp Heating Controller integration."""
 
+import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
