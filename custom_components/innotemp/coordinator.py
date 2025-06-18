@@ -1,11 +1,11 @@
 """DataUpdateCoordinator for Innotemp."""
 
 from homeassistant.helpers.update_coordinator import (
-from .const import DOMAIN
-from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
+from .const import DOMAIN
+
 
 class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
     """Innotemp data update coordinator."""
@@ -45,7 +45,9 @@ class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
 class InnotempCoordinatorEntity(CoordinatorEntity):
     """Base entity for Innotemp, inheriting from CoordinatorEntity."""
 
-    def __init__(self, coordinator: InnotempDataUpdateCoordinator, config_entry, entity_config):
+    def __init__(
+        self, coordinator: InnotempDataUpdateCoordinator, config_entry, entity_config
+    ):
         """Initialize the entity."""
         super().__init__(coordinator)
         self._config_entry = config_entry
@@ -60,6 +62,6 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
         return {
             "identifiers": {(DOMAIN, self._config_entry.unique_id)},
             "name": "Innotemp Heating Controller",
-            "manufacturer": "Innotemp", # Replace with actual manufacturer if known
+            "manufacturer": "Innotemp",  # Replace with actual manufacturer if known
             # You might want to add model and firmware version if available from config
         }

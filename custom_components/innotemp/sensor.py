@@ -1,4 +1,5 @@
 """Sensor platform for Innotemp."""
+
 from __future__ import annotations
 
 from homeassistant.components.sensor import SensorEntity
@@ -30,7 +31,10 @@ class InnotempSensor(InnotempEntity, SensorEntity):
     """Representation of an Innotemp Sensor."""
 
     def __init__(
-        self, coordinator: InnotempDataUpdateCoordinator, param_id: str, param_data: dict
+        self,
+        coordinator: InnotempDataUpdateCoordinator,
+        param_id: str,
+        param_data: dict,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator, param_id, param_data)

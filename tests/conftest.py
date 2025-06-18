@@ -1,6 +1,8 @@
 """Pytest fixtures."""
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock
+
 
 @pytest.fixture
 def mock_client_session():
@@ -11,10 +13,12 @@ def mock_client_session():
     session.close = AsyncMock()
     return session
 
+
 @pytest.fixture(autouse=True)
 def auto_enable_custom_integrations(enable_custom_integrations):
     """Enable custom integrations."""
     yield
+
 
 @pytest.fixture
 def hass():
@@ -24,6 +28,7 @@ def hass():
     hass.data = {}
     hass.async_create_task = MagicMock()
     return hass
+
 
 @pytest.fixture
 def mock_config_entry():

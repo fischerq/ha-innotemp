@@ -1,4 +1,5 @@
 """Platform for switch entities."""
+
 from __future__ import annotations
 
 import logging
@@ -46,7 +47,9 @@ class InnotempSwitch(InnotempEntity, SwitchEntity):
     ) -> None:
         """Initialize the switch."""
         super().__init__(coordinator, room_id, param_id, param_data)
-        self._attr_unique_id = f"{coordinator.config_entry.unique_id}_{room_id}_{param_id}"
+        self._attr_unique_id = (
+            f"{coordinator.config_entry.unique_id}_{room_id}_{param_id}"
+        )
         self._attr_name = param_data.get("label", f"Innotemp Switch {param_id}")
 
         # Get initial state from the coordinator's data
@@ -108,4 +111,4 @@ class InnotempSwitch(InnotempEntity, SwitchEntity):
         """Update the entity's state from coordinator data."""
         # The base InnotempEntity might handle the core data lookup
         # Here, we specifically handle the switch state mapping
-        pass # State is handled by the is_on property
+        pass  # State is handled by the is_on property

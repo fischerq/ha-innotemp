@@ -1,4 +1,5 @@
 """Tests for the InnotempDataUpdateCoordinator."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -38,7 +39,9 @@ async def test_coordinator_handles_sse_disconnect(hass, mock_api_client):
     """Test that the coordinator handles SSE disconnect."""
     # Simulate SSE connection dropping after initial data update
     mock_api_client.async_sse_connect.side_effect = None
-    mock_api_client.async_sse_connect.return_value = None # Or raise a specific exception later if needed
+    mock_api_client.async_sse_connect.return_value = (
+        None  # Or raise a specific exception later if needed
+    )
 
     coordinator = InnotempDataUpdateCoordinator(hass, mock_api_client)
 
