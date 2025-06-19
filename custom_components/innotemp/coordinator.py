@@ -32,16 +32,6 @@ class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
         # Return the current state if needed, or None if not required.
         return self.data
 
-    def __init__(
-        self, coordinator: InnotempDataUpdateCoordinator, config_entry, entity_config
-    ):
-        """Initialize the entity."""
-        super().__init__(coordinator)
-        self._config_entry = config_entry
-        self._entity_config = entity_config
-        self._attr_name = entity_config.get("label")
-        self._attr_unique_id = f"{config_entry.unique_id}_{entity_config.get('param')}"
-
 
 class InnotempCoordinatorEntity(CoordinatorEntity):
     """Base entity for Innotemp, inheriting from CoordinatorEntity."""
