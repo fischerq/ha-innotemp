@@ -1,0 +1,277 @@
+{
+  "city": "GenericCity,GC",
+  "room": [
+    {
+      "@attributes": {
+        "type": "room001",
+        "label": "Generic Room 1",
+        "var": "room1_name"
+      },
+      "display": [
+        {
+          "@attributes": {
+            "type": "display001",
+            "label": "Generic Display 1",
+            "var": "room1_display1_name",
+            "access": "user",
+            "e_analyzer": ".json"
+          },
+          "input": [
+            {
+              "type": "b_input1",
+              "var": "room1_display1_inp1",
+              "unit": "°C",
+              "access": "user",
+              "label": "Generic Input 1"
+            }
+          ]
+        }
+      ],
+      "param": {
+        "@attributes": {
+          "type": "param001",
+          "label": "Generic Param 1",
+          "var": "room1_param1_name",
+          "access": "user",
+          "e_analyzer": ".json"
+        },
+        "entry": {
+          "type": "b_entry00101",
+          "var": "room1_param1_entry1",
+          "unit": "ONOFFAUTO",
+          "access": "user",
+          "label": "Generic Entry 1"
+        },
+        "input": [
+          {
+            "type": "b_input1",
+            "var": "room1_param1_inp1",
+            "unit": "°C",
+            "access": "user",
+            "label": "Generic Input 1"
+          }
+        ]
+      }
+    },
+    {
+      "@attributes": {
+        "type": "room002",
+        "label": "Generic Room 2",
+        "var": "room2_name"
+      },
+      "mixer": {
+        "@attributes": {
+          "type": "mixer001",
+          "label": "Generic Mixer 1",
+          "var": "room2_mixer1_name",
+          "access": "user",
+          "e_analyzer": ".json"
+        },
+        "entry": [
+          {
+            "type": "b_entry00101",
+            "var": "room2_mixer1_entry1",
+            "unit": "VAR:ZU(-1):AUF(1):",
+            "access": "user",
+            "label": "Generic Entry 1"
+          }
+        ],
+        "input": [
+          {
+            "type": "b_input1",
+            "var": "room2_mixer1_inp1",
+            "unit": "°C",
+            "access": "user",
+            "label": "Generic Input 1"
+          }
+        ],
+        "output": [
+          {
+            "type": "b_output1",
+            "var": "room2_mixer1_out1",
+            "unit": "%",
+            "access": "user",
+            "label": "Generic Output 1"
+          }
+        ]
+      },
+      "piseq": [
+        {
+          "@attributes": {
+            "type": "piseq001",
+            "label": "Generic PISeq 1",
+            "var": "room2_piseq1_name",
+            "access": "user"
+          },
+          "input": [
+            {
+              "type": "b_input1",
+              "var": "room2_piseq1_inp1",
+              "unit": "°C",
+              "access": "user",
+              "label": "Generic Input 1"
+            }
+          ],
+          "output": {
+            "type": "b_output1",
+            "var": "room2_piseq1_out1",
+            "unit": "°C",
+            "access": "user",
+            "label": "Generic Output 1"
+          }
+        }
+      ],
+      "pump": [
+        {
+          "@attributes": {
+            "type": "pump001",
+            "label": "Generic Pump 1",
+            "var": "room2_pump1_name",
+            "access": "user"
+          },
+          "entry": {
+            "type": "b_entry00201",
+            "var": "room2_pump1_entry1",
+            "unit": "ONOFFAUTO",
+            "access": "user",
+            "label": "Generic Entry 1"
+          },
+          "input": [
+            {
+              "type": "b_input1",
+              "var": "room2_pump1_inp1",
+              "unit": "%",
+              "access": "user",
+              "label": "Generic Input 1"
+            }
+          ],
+          "output": [
+            {
+              "type": "b_output1",
+              "var": "room2_pump1_out1",
+              "unit": "%",
+              "access": "user",
+              "label": "Generic Output 1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "@attributes": {
+        "type": "room003",
+        "label": "Generic Room 3",
+        "var": "room3_name"
+      },
+      "radiator": [
+        {
+          "@attributes": {
+            "type": "radiator001",
+            "label": "Generic Radiator 1",
+            "var": "room3_radiator1_name",
+            "access": "user"
+          },
+          "input": [
+            {
+              "type": "b_input1",
+              "var": "room3_radiator1_inp1",
+              "unit": "°C",
+              "access": "user",
+              "label": "Generic Input 1"
+            }
+          ],
+          "output": [
+            {
+              "type": "b_output1",
+              "var": "room3_radiator1_out1",
+              "unit": "%",
+              "access": "admin",
+              "label": "Generic Output 1"
+            }
+          ]
+        }
+      ],
+      "main": {
+        "@attributes": {
+          "label": "Generic Main",
+          "access": "user",
+          "var": "room3_main_name"
+        },
+        "entry": {
+          "type": "b_entry00100",
+          "var": "room3_main_entry1",
+          "unit": "°C",
+          "access": "user",
+          "label": "Generic Entry 1"
+        },
+        "input": [
+          {
+            "type": "b_input1",
+            "var": "room3_main_inp1",
+            "unit": "°C",
+            "access": "user",
+            "label": "Generic Input 1"
+          }
+        ],
+        "output": [
+          {
+            "type": "b_output1",
+            "var": "room3_main_out1",
+            "unit": "°C",
+            "access": "admin",
+            "label": "Generic Output 1"
+          }
+        ]
+      }
+    },
+    {
+      "@attributes": {
+        "type": "room004",
+        "label": "Generic Room 4",
+        "var": "room4_name"
+      },
+      "drink": {
+        "@attributes": {
+          "type": "drink001",
+          "label": "Generic Drink 1",
+          "var": "room4_drink1_name",
+          "access": "user"
+        },
+        "entry": [
+          {
+            "type": "b_entry00201",
+            "var": "room4_drink1_entry1",
+            "unit": "°C",
+            "access": "user",
+            "label": "Generic Entry 1"
+          }
+        ],
+        "input": [
+          {
+            "type": "b_input1",
+            "var": "room4_drink1_inp1",
+            "unit": "°C",
+            "access": "user",
+            "label": "Generic Input 1"
+          },
+          {
+            "type": "b_input5",
+            "var": "room4_drink1_inp5",
+            "unit": "ONOFF",
+            "access": "user",
+            "label": "Generic Input 2"
+          }
+        ],
+        "output": [
+          {
+            "type": "b_output1",
+            "var": "room4_drink1_out1",
+            "unit": "%",
+            "access": "admin",
+            "label": "Generic Output 1"
+          }
+        ]
+      }
+    }
+  ]
+}
