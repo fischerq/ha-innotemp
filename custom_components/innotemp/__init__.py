@@ -34,7 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.error("Failed to connect and fetch initial config: %s", ex)
         return False
 
-    coordinator = InnotempDataUpdateCoordinator(hass, api_client)
+    coordinator = InnotempDataUpdateCoordinator(hass, _LOGGER, api_client)
 
     # Pass the coordinator's async_set_updated_data as the callback for SSE
     coordinator.sse_task = hass.async_create_task(
