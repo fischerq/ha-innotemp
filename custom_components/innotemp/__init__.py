@@ -25,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data["password"]
 
     session = async_get_clientsession(hass)
+    _LOGGER.debug(f"Innotemp: Initializing API client. Session type: {type(session)}, Host: {host}")
     api_client = InnotempApiClient(session, host, username, password)
 
     # Login and fetch initial configuration

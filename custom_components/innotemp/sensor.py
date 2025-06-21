@@ -18,13 +18,15 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up Innotemp sensors based on a config entry."""
-    coordinator: InnotempDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
-    api = coordinator.api_client
+    integration_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator: InnotempDataUpdateCoordinator = integration_data["coordinator"]
+    config_data: dict = integration_data["config"]
+    api = coordinator.api_client # This should still be valid
     entities = []
 
     # Assuming config holds a list of sensor parameters from async_get_config
-    for param_id, param_data in coordinator.config.get("sensors", {}).items():
-        entities.append(InnotempSensor(coordinator, param_id, param_data))
+    for param_id, param_data in config_data.get("sensors", {}).items():
+        entities.append(InnotempSensor(coordinator, entry, param_id, param_data))
 
     async_add_entities(entities)
 
@@ -35,16 +37,18 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
     def __init__(
         self,
         coordinator: InnotempDataUpdateCoordinator,
+        config_entry: ConfigEntry,
         param_id: str,
         param_data: dict,
     ) -> None:
         """Initialize the sensor."""
         super().__init__(
-            coordinator, coordinator.config_entry, {"param": param_id, **param_data}
+            coordinator, config_entry, {"param": param_id, **param_data}
         )  # Pass config_entry and entity_config
         self._attr_name = param_data.get("label", f"Innotemp Sensor {param_id}")
-        self._attr_unique_id = f"{coordinator.config_entry.unique_id}_{param_id}"
+        self._attr_unique_id = f"{config_entry.unique_id}_{param_id}"
         self._attr_native_unit_of_measurement = param_data.get("unit")
+        self._param_id = param_id
         # Add other relevant sensor attributes based on param_data
 
     @property

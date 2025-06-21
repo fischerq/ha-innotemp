@@ -19,12 +19,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up switch entities based on config entry."""
-    coordinator: InnotempDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    integration_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator: InnotempDataUpdateCoordinator = integration_data["coordinator"]
+    config_data: dict = integration_data["config"]
     entities = []
 
     # Assuming coordinator.config holds the parsed configuration from async_get_config
     # This will need to be adapted based on the actual structure of the config data
-    for room_id, room_data in coordinator.config.items():
+    for room_id, room_data in config_data.items():
         for param_id, param_data in room_data.get("parameters", {}).items():
             if param_data.get("type") == "ONOFFAUTO":  # Example type check
                 entities.append(
