@@ -22,6 +22,12 @@ async def async_setup_entry(
     integration_data = hass.data[DOMAIN][entry.entry_id]
     coordinator: InnotempDataUpdateCoordinator = integration_data["coordinator"]
     config_data: dict = integration_data["config"]
+
+    if config_data is None:
+        _LOGGER.warning("Innotemp switch setup: config_data is None, skipping switch entity creation.")
+        async_add_entities([]) # Add no entities
+        return
+
     entities = []
 
     # Assuming coordinator.config holds the parsed configuration from async_get_config

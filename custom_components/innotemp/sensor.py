@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -13,6 +14,8 @@ from .coordinator import (
     InnotempCoordinatorEntity,
 )  # Assuming InnotempCoordinatorEntity is in coordinator.py
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
@@ -21,6 +24,14 @@ async def async_setup_entry(
     integration_data = hass.data[DOMAIN][entry.entry_id]
     coordinator: InnotempDataUpdateCoordinator = integration_data["coordinator"]
     config_data: dict = integration_data["config"]
+
+    if config_data is None:
+        _LOGGER.warning("Innotemp sensor setup: config_data is None, skipping sensor entity creation.")
+        # Depending on HA best practices, simply returning might be enough if __init__ already returned False.
+        # However, explicitly handling it here ensures no further processing for this platform.
+        async_add_entities([]) # Add no entities
+        return
+
     api = coordinator.api_client # This should still be valid
     entities = []
 
