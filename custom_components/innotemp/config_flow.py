@@ -6,6 +6,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries, core
 from homeassistant.const import Platform
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 from .api import InnotempApiClient
@@ -14,9 +15,22 @@ from . import PLATFORMS  # Import PLATFORMS from __init__.py
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def _validate_host_input(host_input: str) -> str:
+    if not host_input:
+        raise vol.Invalid("Host cannot be empty.")
+    if host_input.lower() in ["http", "https"]:
+        raise vol.Invalid("Hostname cannot be 'http' or 'https'. Enter a valid IP address or hostname.")
+    if "://" in host_input:
+        raise vol.Invalid("Hostname should not include '://'. Enter just the address.")
+    if len(host_input) < 3: # Basic length check, e.g., "a.b" is too short for a valid TLD host
+        raise vol.Invalid("Hostname is too short or invalid format.")
+    return host_input
+
+
 DATA_SCHEMA = vol.Schema(
     {
-        vol.Required("host"): str,
+        vol.Required("host"): _validate_host_input,
         vol.Required("username"): str,
         vol.Required("password"): str,
     }
@@ -32,8 +46,9 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         if user_input is not None:
             # Basic validation: Try to connect
+            session = async_get_clientsession(self.hass)
             api_client = InnotempApiClient(
-                self.hass,
+                session,
                 user_input["host"],
                 user_input["username"],
                 user_input["password"],
