@@ -4,6 +4,8 @@ from aiohttp import ClientSession, ClientResponse
 from aiohttp.test_utils import AioHTTPTestCase, TestServer
 from aiohttp import web
 import asyncio
+import json # Added for loading JSON data
+import os # Added for path manipulation
 
 from custom_components.innotemp.api import InnotempApiClient
 
@@ -49,7 +51,7 @@ async def test_api_client_login(mock_client_session):
     mock_client_session.post.return_value.__aenter__.return_value = mock_response
 
     client = InnotempApiClient(
-        "mock_host", "mock_user", "mock_password", mock_client_session
+        mock_client_session, "mock_host", "mock_user", "mock_password"
     )
     await client.async_login()
 
@@ -69,9 +71,15 @@ async def test_api_client_get_config(mock_client_session):
     mock_client_session.post.return_value.__aenter__.return_value = mock_response
 
     client = InnotempApiClient(
-        "mock_host", "mock_user", "mock_password", mock_client_session
+        mock_client_session, "mock_host", "mock_user", "mock_password"
     )
-    client._session_id = "mock_session_id"  # Simulate a logged-in state
+    # For async_get_config, login is implicitly handled by async_api_request if needed,
+    # but we need to ensure the session is established for the direct call.
+    # However, the internal _session_id is not directly used by async_get_config itself,
+    # it's used by the underlying async_api_request for cookie management which is part of the mock_client_session.
+    # We can simulate that a login has occurred if necessary for other logic, but for this test's purpose,
+    # ensuring the mock_client_session is passed correctly is key.
+    # client._session_id = "mock_session_id" # This might not be needed if async_login is mocked or session handles cookies
 
     config = await client.async_get_config()
 
@@ -92,9 +100,11 @@ async def test_api_client_send_command(mock_client_session):
     mock_client_session.post.return_value.__aenter__.return_value = mock_response
 
     client = InnotempApiClient(
-        "mock_host", "mock_user", "mock_password", mock_client_session
+        mock_client_session, "mock_host", "mock_user", "mock_password"
     )
-    client._session_id = "mock_session_id"  # Simulate a logged-in state
+    # Similar to async_get_config, async_send_command uses async_api_request,
+    # which would handle re-login if necessary. The key is the correct session mock.
+    # client._session_id = "mock_session_id"
 
     await client.async_send_command("room1", "param1", "new_val", "prev_val")
 
@@ -136,9 +146,11 @@ async def test_api_client_sse_connect_and_disconnect(mock_client_session):
     mock_client_session.get.return_value.__aenter__.return_value = mock_sse_response
 
     client = InnotempApiClient(
-        "mock_host", "mock_user", "mock_password", mock_client_session
+        mock_client_session, "mock_host", "mock_user", "mock_password"
     )
-    client._session_id = "mock_session_id"
+    # SSE connection also relies on async_api_request for fetching signal names
+    # and direct session usage for the SSE GET request.
+    # client._session_id = "mock_session_id" # Cookie handling is part of the session mock
 
     mock_callback = AsyncMock()
 
@@ -197,7 +209,7 @@ async def test_api_request_retry_on_session_timeout(mock_client_session):
     ]
 
     client = InnotempApiClient(
-        "mock_host", "mock_user", "mock_password", mock_client_session
+        mock_client_session, "mock_host", "mock_user", "mock_password"
     )
 
     with patch.object(client, "async_login", new_callable=AsyncMock) as mock_login:
@@ -213,3 +225,44 @@ async def test_api_request_retry_on_session_timeout(mock_client_session):
 
         # Verify the final response is the successful one
         assert await response.text() == '{"status":"success"}'
+
+
+@pytest.mark.asyncio
+async def test_api_client_get_config_with_roomconf_data(mock_client_session):
+    """Test getting configuration with data from roomconf_test_data.json."""
+    # Construct the path to the test data file
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(current_dir, "roomconf_test_data.json")
+
+    # Load the JSON data from the file
+    with open(file_path, "r") as f:
+        roomconf_data = json.load(f)
+
+    # Mock the response for async_get_config
+    # The InnotempApiClient.async_get_config method makes a POST request
+    # and then calls .json() on the response.
+    mock_response = await create_mock_response(
+        json_data=roomconf_data  # This is what response.json() should return
+    )
+    # Configure the mock_client_session.post to return this mock_response
+    # when its __aenter__ is called (as it's used in an 'async with' block)
+    mock_client_session.post.return_value.__aenter__.return_value = mock_response
+
+    # Instantiate the API client
+    client = InnotempApiClient(
+        mock_client_session, "mock_host", "mock_user", "mock_password"
+    )
+    # client._session_id = "mock_session_id" # Not strictly needed if session mock handles cookies
+
+    # Call async_get_config
+    config_data = await client.async_get_config()
+
+    # Assert that the returned data is the same as the loaded data
+    assert config_data == roomconf_data
+
+    # Also, verify that the mock_client_session.post was called correctly
+    mock_client_session.post.assert_called_once_with(
+        "mock_host/inc/roomconf.read.php",
+        data={"un": "mock_user", "pw": "mock_password", "date_string": 0},
+        cookies={"PHPSESSID": "mock_session_id"},
+    )

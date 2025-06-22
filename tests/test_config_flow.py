@@ -91,7 +91,7 @@ async def test_successful_flow_from_subtask(
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
     assert result["step_id"] == "user"
 
     # Patch InnotempApiClient and its async_login method
@@ -112,7 +112,7 @@ async def test_successful_flow_from_subtask(
         )
         await hass.async_block_till_done()  # Ensure all tasks are processed
 
-    assert result2["type"] == data_entry_flow.RESULT_TYPE_CREATE_ENTRY
+    assert result2["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     assert result2["title"] == "Innotemp Heating Controller"
     assert result2["data"] == {
         CONF_HOST: "test.host.com",
@@ -129,7 +129,7 @@ async def test_flow_invalid_host_empty(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    assert result["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result["type"] == data_entry_flow.FlowResultType.FORM
 
     result2 = await hass.config_entries.flow.async_configure(
         result["flow_id"],
@@ -141,7 +141,7 @@ async def test_flow_invalid_host_empty(hass: HomeAssistant) -> None:
     )
     await hass.async_block_till_done()
 
-    assert result2["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result2["type"] == data_entry_flow.FlowResultType.FORM
     assert result2["errors"] is not None
     assert result2["errors"].get(CONF_HOST) == "Host cannot be empty."
 
@@ -155,7 +155,7 @@ async def test_flow_invalid_host_is_http(hass: HomeAssistant) -> None:
         result["flow_id"], {CONF_HOST: "http", CONF_USERNAME: "u", CONF_PASSWORD: "p"}
     )
     await hass.async_block_till_done()
-    assert result2["type"] == data_entry_flow.RESULT_TYPE_FORM
+    assert result2["type"] == data_entry_flow.FlowResultType.FORM
     assert result2["errors"] is not None
     assert (
         result2["errors"].get(CONF_HOST)
