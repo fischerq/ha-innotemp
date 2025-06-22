@@ -20,14 +20,14 @@ def auto_enable_custom_integrations(enable_custom_integrations):
     yield
 
 
-@pytest.fixture
-def hass():
-    """Fixture to provide a mock Home Assistant instance."""
-    hass = MagicMock()
-    hass.config_entries = MagicMock()
-    hass.data = {}
-    hass.async_create_task = MagicMock()
-    return hass
+# @pytest.fixture
+# def hass():
+#     """Fixture to provide a mock Home Assistant instance."""
+#     hass = MagicMock()
+#     hass.config_entries = MagicMock()
+#     hass.data = {}
+#     hass.async_create_task = MagicMock()
+#     return hass
 
 
 @pytest.fixture
