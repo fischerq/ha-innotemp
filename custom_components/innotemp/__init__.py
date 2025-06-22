@@ -21,6 +21,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})  # type: ignore[no-untyped-call]
 
     host = entry.data["host"]
+
+    # Specific check for known invalid host formats from stored config
+    invalid_host_detected = False
+    if not host:
+        _LOGGER.error(
+            "Stored Innotemp configuration has an empty host. "
+            "Please remove and re-add the integration with a valid host."
+        )
+        invalid_host_detected = True
+    elif host.lower() in ["http", "https"]:
+        _LOGGER.error(
+            f"Stored Innotemp configuration has an invalid host: '{host}'. "
+            "This should be an IP address or hostname, not 'http' or 'https'. "
+            "Please remove and re-add the integration."
+        )
+        invalid_host_detected = True
+    elif "://" in host:
+        _LOGGER.error(
+            f"Stored Innotemp configuration host '{host}' contains '://'. "
+            "Please use just the IP address or hostname. "
+            "Please remove and re-add the integration."
+        )
+        invalid_host_detected = True
+    elif len(host) < 3: # Basic sanity check
+        _LOGGER.error(
+            f"Stored Innotemp configuration host '{host}' is too short or invalid. "
+            "Please remove and re-add the integration with a valid host."
+        )
+        invalid_host_detected = True
+
+    if invalid_host_detected:
+        return False # Abort setup early
+
     username = entry.data["username"]
     password = entry.data["password"]
 
