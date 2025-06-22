@@ -4,6 +4,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import InnotempApiClient
 from .coordinator import InnotempDataUpdateCoordinator
@@ -23,18 +24,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     username = entry.data["username"]
     password = entry.data["password"]
 
-    api_client = InnotempApiClient(hass, host, username, password)
+    session = async_get_clientsession(hass)
+    _LOGGER.debug(f"Innotemp: Initializing API client. Session type: {type(session)}, Host: {host}")
+    api_client = InnotempApiClient(session, host, username, password)
 
     # Login and fetch initial configuration
     try:
         await api_client.async_login()
         config_data = await api_client.async_get_config()
+        if config_data is None:
+            _LOGGER.error("Failed to fetch configuration from Innotemp device (config_data is None). Aborting setup.")
+            return False
         _LOGGER.debug("Initial configuration fetched: %s", config_data)
     except Exception as ex:
         _LOGGER.error("Failed to connect and fetch initial config: %s", ex)
         return False
 
-    coordinator = InnotempDataUpdateCoordinator(hass, api_client)
+    coordinator = InnotempDataUpdateCoordinator(hass, _LOGGER, api_client)
 
     # Pass the coordinator's async_set_updated_data as the callback for SSE
     coordinator.sse_task = hass.async_create_task(

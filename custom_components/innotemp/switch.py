@@ -11,7 +11,6 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
-from .entity import InnotempEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -20,16 +19,24 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up switch entities based on config entry."""
-    coordinator: InnotempDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    integration_data = hass.data[DOMAIN][entry.entry_id]
+    coordinator: InnotempDataUpdateCoordinator = integration_data["coordinator"]
+    config_data: dict = integration_data["config"]
+
+    if config_data is None:
+        _LOGGER.warning("Innotemp switch setup: config_data is None, skipping switch entity creation.")
+        async_add_entities([]) # Add no entities
+        return
+
     entities = []
 
     # Assuming coordinator.config holds the parsed configuration from async_get_config
     # This will need to be adapted based on the actual structure of the config data
-    for room_id, room_data in coordinator.config.items():
+    for room_id, room_data in config_data.items():
         for param_id, param_data in room_data.get("parameters", {}).items():
             if param_data.get("type") == "ONOFFAUTO":  # Example type check
                 entities.append(
-                    InnotempSwitch(coordinator, room_id, param_id, param_data)
+                    InnotempSwitch(coordinator, entry, room_id, param_id, param_data)
                 )
 
     async_add_entities(entities)
@@ -42,16 +49,24 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
         self,
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        entity_config: dict,
+        room_id: str,
+        param_id: str,
+        param_data: dict,
     ) -> None:
         """Initialize the switch."""
+        entity_config = {
+            "param": param_id,
+            "label": param_data.get("label", f"Innotemp Switch {param_id}"),
+            "room_id": room_id,
+            # Add any other relevant parts of param_data if needed by base class
+        }
         super().__init__(coordinator, config_entry, entity_config)
-        self._room_id = entity_config.get("room_id")
-        self._param_id = entity_config.get("param_id")
+        self._room_id = room_id
+        self._param_id = param_id
         self._attr_unique_id = (
             f"{config_entry.unique_id}_{self._room_id}_{self._param_id}"
         )
-        self._attr_name = param_data.get("label", f"Innotemp Switch {param_id}")
+        self._attr_name = entity_config["label"]
 
         # Get initial state from the coordinator's data
         self._update_state_from_coordinator()
