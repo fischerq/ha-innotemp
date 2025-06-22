@@ -42,3 +42,11 @@ def mock_config_entry():
     config_entry.entry_id = "test_entry_id"
     config_entry.options = {}
     return config_entry
+
+
+@pytest.fixture(autouse=True)
+def mock_setup_entry():
+    """Stop setup entry from failing if no config entry is initialized."""
+    from unittest.mock import patch
+    with patch("custom_components.innotemp.async_setup_entry", return_value=True):
+        yield
