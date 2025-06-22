@@ -88,6 +88,90 @@ async def test_api_client_get_config(mock_client_session):
         data={"un": "mock_user", "pw": "mock_password", "date_string": 0},
         cookies={"PHPSESSID": "mock_session_id"},
     )
+
+
+@pytest.mark.asyncio
+async def test_async_get_config_invalid_json_response(
+    mock_client_session, caplog
+):
+    """Test async_get_config when the API returns an invalid JSON response."""
+    invalid_json_text = "This is not JSON"
+    # Simulate a response that claims to be JSON but has an invalid body
+    mock_response = await create_mock_response(
+        status=200,
+        text=invalid_json_text,
+        # response.json() will raise an error if text is not valid JSON,
+        # so we need to mock response.json() to raise ContentTypeError or JSONDecodeError
+        # aiohttp.ContentTypeError is more specific for when .json() is called on non-json content type or bad json
+        # json.JSONDecodeError is for when the content is supposed to be json but malformed
+        headers={"Content-Type": "application/json"},
+    )
+    # We need to mock the .json() call on the response object to raise the error
+    # our code is trying to catch.
+    # The create_mock_response helper by default mocks .json to return json_data.
+    # We need to override this for this specific test.
+    mock_response.json = AsyncMock(side_effect=json.JSONDecodeError("Error", "doc", 0))
+
+
+    mock_client_session.post.return_value.__aenter__.return_value = mock_response
+
+    client = InnotempApiClient(
+        mock_client_session, "mock_host", "mock_user", "mock_password"
+    )
+    # client._session_id = "mock_session_id" # Not strictly needed if session mock handles cookies
+
+    config = await client.async_get_config()
+
+    assert config is None  # Expect None when JSON decoding fails
+
+    # Verify the POST call
+    mock_client_session.post.assert_called_once_with(
+        "mock_host/inc/roomconf.read.php",
+        data={"un": "mock_user", "pw": "mock_password", "date_string": 0},
+        cookies={"PHPSESSID": "mock_session_id"},
+    )
+
+    # Check for the specific error log message
+    found_log = False
+    for record in caplog.records:
+        if record.levelname == "ERROR" and "Failed to decode JSON response" in record.message:
+            assert f"Response text: '{invalid_json_text}'" in record.message
+            found_log = True
+            break
+    assert found_log, "Expected error log message not found."
+
+
+@pytest.mark.asyncio
+async def test_async_get_config_empty_json_response(mock_client_session, caplog):
+    """Test async_get_config when the API returns an empty JSON response string."""
+    empty_json_text = ""
+    # Simulate a response that claims to be JSON but has an empty body
+    mock_response = await create_mock_response(
+        status=200,
+        text=empty_json_text,
+        headers={"Content-Type": "application/json"},
+    )
+    # Mock .json() to raise an error, as an empty string is not valid JSON
+    mock_response.json = AsyncMock(side_effect=json.JSONDecodeError("Error", "doc", 0))
+
+    mock_client_session.post.return_value.__aenter__.return_value = mock_response
+
+    client = InnotempApiClient(
+        mock_client_session, "mock_host", "mock_user", "mock_password"
+    )
+
+    config = await client.async_get_config()
+
+    assert config is None
+
+    # Check for the specific error log message
+    found_log = False
+    for record in caplog.records:
+        if record.levelname == "ERROR" and "Failed to decode JSON response" in record.message:
+            assert f"Response text: '{empty_json_text}'" in record.message
+            found_log = True
+            break
+    assert found_log, "Expected error log message for empty JSON not found."
     assert config == {"config_data": "mock_config"}
 
 
