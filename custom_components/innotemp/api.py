@@ -39,16 +39,36 @@ class InnotempApiClient:
             async with self._session.request(method, url, data=data) as response:
                 response.raise_for_status()
                 if "application/json" in response.headers.get("Content-Type", ""):
-                    return await response.json()
+                    try:
+                        return await response.json()
+                    except (json.JSONDecodeError, aiohttp.ContentTypeError) as json_err:
+                        response_text = await response.text()
+                        _LOGGER.error(
+                            f"Failed to decode JSON response from {endpoint}. "
+                            f"Status: {response.status}, Content-Type: {response.headers.get('Content-Type')}. "
+                            f"Error: {json_err}. Response text: '{response_text}'"
+                        )
+                        return None
                 else:
                     # Handle cases where the response is not strictly JSON but indicates success
-                    # This might need adjustment based on actual API responses
+                    response_text = await response.text()
                     _LOGGER.debug(
-                        f"Non-JSON response from {endpoint}: {await response.text()}"
+                        f"Non-JSON response from {endpoint}. Status: {response.status}, "
+                        f"Content-Type: {response.headers.get('Content-Type')}. Response text: '{response_text}'"
                     )
+                    # Assuming an empty dict is a valid non-JSON success response,
+                    # otherwise, this might need to be an error or None.
                     return {}
         except aiohttp.ClientResponseError as e:
-            _LOGGER.warning(f"API request to {endpoint} failed: {e}")
+            # Log the response text if available, as it might contain useful error details
+            response_text_on_error = ""
+            if hasattr(e, "response") and e.response is not None: # check if response attribute exists
+                try:
+                    response_text_on_error = await e.response.text()
+                except Exception:
+                    response_text_on_error = "Could not retrieve response text."
+
+            _LOGGER.warning(f"API request to {endpoint} failed: {e}. Response: '{response_text_on_error}'")
             # Check if it's a potential session timeout error
             # The API analysis didn't specify the exact error, assuming a 401 or similar
             if e.status in [401, 403] and attempt == 1:
