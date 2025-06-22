@@ -33,7 +33,9 @@ class InnotempApiClient:
         """Wrap API requests to handle session timeouts."""
         url = f"{self._base_url}/{endpoint}"
         try:
-            _LOGGER.debug(f"InnotempApiClient.async_api_request: Type of self._session: {type(self._session)}")
+            _LOGGER.debug(
+                f"InnotempApiClient.async_api_request: Type of self._session: {type(self._session)}"
+            )
             async with self._session.request(method, url, data=data) as response:
                 response.raise_for_status()
                 if "application/json" in response.headers.get("Content-Type", ""):
@@ -78,7 +80,9 @@ class InnotempApiClient:
         # Use a raw request here as session management happens at this level
         url = f"{self._base_url}/groups.read.php"
         try:
-            _LOGGER.debug(f"InnotempApiClient.async_login: Type of self._session: {type(self._session)}")
+            _LOGGER.debug(
+                f"InnotempApiClient.async_login: Type of self._session: {type(self._session)}"
+            )
             async with self._session.post(url, data=login_data) as response:
                 response.raise_for_status()
                 # Session cookie should be handled automatically by aiohttp.ClientSession

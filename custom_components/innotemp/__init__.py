@@ -25,7 +25,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data["password"]
 
     session = async_get_clientsession(hass)
-    _LOGGER.debug(f"Innotemp: Initializing API client. Session type: {type(session)}, Host: {host}")
+    _LOGGER.debug(
+        f"Innotemp: Initializing API client. Session type: {type(session)}, Host: {host}"
+    )
     api_client = InnotempApiClient(session, host, username, password)
 
     # Login and fetch initial configuration
@@ -33,7 +35,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await api_client.async_login()
         config_data = await api_client.async_get_config()
         if config_data is None:
-            _LOGGER.error("Failed to fetch configuration from Innotemp device (config_data is None). Aborting setup.")
+            _LOGGER.error(
+                "Failed to fetch configuration from Innotemp device (config_data is None). Aborting setup."
+            )
             return False
         _LOGGER.debug("Initial configuration fetched: %s", config_data)
     except Exception as ex:

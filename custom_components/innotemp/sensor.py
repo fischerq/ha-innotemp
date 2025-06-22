@@ -26,13 +26,15 @@ async def async_setup_entry(
     config_data: dict = integration_data["config"]
 
     if config_data is None:
-        _LOGGER.warning("Innotemp sensor setup: config_data is None, skipping sensor entity creation.")
+        _LOGGER.warning(
+            "Innotemp sensor setup: config_data is None, skipping sensor entity creation."
+        )
         # Depending on HA best practices, simply returning might be enough if __init__ already returned False.
         # However, explicitly handling it here ensures no further processing for this platform.
-        async_add_entities([]) # Add no entities
+        async_add_entities([])  # Add no entities
         return
 
-    api = coordinator.api_client # This should still be valid
+    api = coordinator.api_client  # This should still be valid
     entities = []
 
     # Assuming config holds a list of sensor parameters from async_get_config

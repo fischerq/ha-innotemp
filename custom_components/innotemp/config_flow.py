@@ -29,10 +29,16 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if not host_input:
                 raise vol.Invalid("Host cannot be empty.")
             if host_input.lower() in ["http", "https"]:
-                raise vol.Invalid("Hostname cannot be 'http' or 'https'. Enter a valid IP address or hostname.")
+                raise vol.Invalid(
+                    "Hostname cannot be 'http' or 'https'. Enter a valid IP address or hostname."
+                )
             if "://" in host_input:
-                raise vol.Invalid("Hostname should not include '://'. Enter just the address.")
-            if len(host_input) < 3: # Basic length check, e.g., "a.b" is too short for a valid TLD host
+                raise vol.Invalid(
+                    "Hostname should not include '://'. Enter just the address."
+                )
+            if (
+                len(host_input) < 3
+            ):  # Basic length check, e.g., "a.b" is too short for a valid TLD host
                 raise vol.Invalid("Hostname is too short or invalid format.")
             return host_input
 
@@ -69,7 +75,9 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     errors=errors,
                 )
 
-        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+        return self.async_show_form(
+            step_id="user", data_schema=data_schema, errors=errors
+        )
 
 
 async def async_setup_entry(
