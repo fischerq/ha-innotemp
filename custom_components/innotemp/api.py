@@ -40,13 +40,21 @@ class InnotempApiClient:
                 response.raise_for_status()
                 if "application/json" in response.headers.get("Content-Type", ""):
                     try:
+                        # Ensure aiohttp.client_exceptions.ContentTypeError is what we intend to catch
+                        # Also, add type of error to logging for clarity.
                         return await response.json()
-                    except (json.JSONDecodeError, aiohttp.ContentTypeError) as json_err:
-                        response_text = await response.text()
+                    except (json.JSONDecodeError, aiohttp.client_exceptions.ContentTypeError) as json_err:
+                        response_text_content = "Could not retrieve response text after JSON decode error."
+                        try:
+                            response_text_content = await response.text()
+                        except Exception as text_err:
+                            _LOGGER.error(
+                                f"Additionally, failed to retrieve response text after JSON decode error for {endpoint}. Error: {text_err}"
+                            )
                         _LOGGER.error(
                             f"Failed to decode JSON response from {endpoint}. "
                             f"Status: {response.status}, Content-Type: {response.headers.get('Content-Type')}. "
-                            f"Error: {json_err}. Response text: '{response_text}'"
+                            f"Error Type: {type(json_err)}, Error: {json_err}. Response text: '{response_text_content}'"
                         )
                         return None
                 else:
