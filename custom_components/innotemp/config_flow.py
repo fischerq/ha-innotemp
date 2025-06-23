@@ -44,7 +44,7 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Required("host"): str,#_validate_host_input,
+                vol.Required("host"): _validate_host_input,
                 vol.Required("username"): str,
                 vol.Required("password"): str,
             }
@@ -91,7 +91,8 @@ async def async_setup_entry(
     username = entry.data["username"]
     password = entry.data["password"]
 
-    api_client = InnotempApiClient(hass, host, username, password)
+    session = async_get_clientsession(hass)
+    api_client = InnotempApiClient(session, host, username, password)
 
     # Login and fetch initial configuration
     try:
