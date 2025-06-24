@@ -6,18 +6,16 @@ from typing import Callable, Awaitable, Dict, Any, Optional
 
 # Standard logger for Home Assistant components
 _LOGGER = logging.getLogger(__name__)
-
+_LOGGER.setLevel(logging.DEBUG)  # Changed logger level to debug
 
 # Custom exceptions for better error handling
 class InnotempApiError(Exception):
     """Generic Innotemp API error."""
-
     pass
 
 
 class InnotempAuthError(InnotempApiError):
     """Innotemp API authentication error."""
-
     pass
 
 
