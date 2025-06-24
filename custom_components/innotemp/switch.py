@@ -222,28 +222,27 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         """Return true if switch is on."""
+        # Ensure coordinator data is available before proceeding
         if self.coordinator.data is None:
             _LOGGER.debug(
-                "Coordinator data is None for entity %s (%s), cannot determine state.",
+                "InnotempSwitch.is_on: Coordinator data is None for entity %s (param_id: %s). Returning None for state.",
                 self.entity_id,
                 self._param_id
             )
-            return None  # Data not available, state is unknown
+            return None
 
-        # Assuming the value in coordinator.data corresponds to the ON/OFF state
-        # This mapping (0=OFF, 1=ON, 2=AUTO) needs to be handled based on the API spec
         current_value = self.coordinator.data.get(self._param_id)
-        if current_value is not None:
-            # Map API value to Home Assistant state
-            return current_value == 1  # Assuming 1 is ON
+        if current_value is None:
+            _LOGGER.debug(
+                "InnotempSwitch.is_on: Param_id %s not found in coordinator data for entity %s. Data: %s. Returning None for state.",
+                self._param_id,
+                self.entity_id,
+                self.coordinator.data
+            )
+            return None
 
-        _LOGGER.debug(
-            "Param_id %s not found in coordinator data for entity %s. Data: %s",
-            self._param_id,
-            self.entity_id,
-            self.coordinator.data
-        )
-        return None # Param_id not in data, state is unknown
+        # Assuming 1 is ON, 0 is OFF. Adapt if API uses different values.
+        return current_value == 1
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the switch on."""
