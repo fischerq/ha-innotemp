@@ -17,24 +17,39 @@ def mock_coordinator_switch_success(hass: HomeAssistant):
     """Fixture for a DataUpdateCoordinator with switch data."""
     coordinator = MagicMock(spec=DataUpdateCoordinator)
     coordinator.hass = hass
-    coordinator.api_client = AsyncMock(spec=InnotempApiClient) # Mock API client on coordinator
+    coordinator.api_client = AsyncMock(
+        spec=InnotempApiClient
+    )  # Mock API client on coordinator
     coordinator.data = {
         "switches": [
-            {"room_id": "101", "param": "heating_mode", "label": "Main Heating", "type": "ONOFFAUTO"},
-            {"room_id": "102", "param": "fan_power", "label": "Ventilation Fan", "type": "ONOFF"},
+            {
+                "room_id": "101",
+                "param": "heating_mode",
+                "label": "Main Heating",
+                "type": "ONOFFAUTO",
+            },
+            {
+                "room_id": "102",
+                "param": "fan_power",
+                "label": "Ventilation Fan",
+                "type": "ONOFF",
+            },
         ],
-        "heating_mode": 0, # Initial state: OFF
-        "fan_power": 1,    # Initial state: ON
+        "heating_mode": 0,  # Initial state: OFF
+        "fan_power": 1,  # Initial state: ON
     }
-    config_entry_mock = MagicMock(spec=config_entries.ConfigEntry, entry_id="test_switch_entry")
+    config_entry_mock = MagicMock(
+        spec=config_entries.ConfigEntry, entry_id="test_switch_entry"
+    )
     type(coordinator).config_entry = PropertyMock(return_value=config_entry_mock)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][config_entry_mock.entry_id] = {
         "coordinator": coordinator,
-        "config": coordinator.data # Pass coordinator's data as 'config' for switch setup
+        "config": coordinator.data,  # Pass coordinator's data as 'config' for switch setup
     }
     return coordinator
+
 
 @pytest.fixture
 def mock_coordinator_switch_failure(hass: HomeAssistant):
@@ -43,46 +58,71 @@ def mock_coordinator_switch_failure(hass: HomeAssistant):
     coordinator.hass = hass
     coordinator.api_client = AsyncMock(spec=InnotempApiClient)
     # Simulate API command failure
-    coordinator.api_client.async_send_command = AsyncMock(side_effect=Exception("API Command Failed"))
+    coordinator.api_client.async_send_command = AsyncMock(
+        side_effect=Exception("API Command Failed")
+    )
     coordinator.data = {
         "switches": [
-            {"room_id": "201", "param": "faulty_switch", "label": "Faulty Switch", "type": "ONOFF"},
+            {
+                "room_id": "201",
+                "param": "faulty_switch",
+                "label": "Faulty Switch",
+                "type": "ONOFF",
+            },
             # Switch data key might be missing
-            {"room_id": "202", "param": "missing_data_switch", "label": "Switch Missing Data", "type": "ONOFF"},
+            {
+                "room_id": "202",
+                "param": "missing_data_switch",
+                "label": "Switch Missing Data",
+                "type": "ONOFF",
+            },
         ],
-        "faulty_switch": 0, # Initial state for faulty_switch
+        "faulty_switch": 0,  # Initial state for faulty_switch
         # "missing_data_switch" key is intentionally missing
     }
-    config_entry_mock = MagicMock(spec=config_entries.ConfigEntry, entry_id="test_switch_entry_failure")
+    config_entry_mock = MagicMock(
+        spec=config_entries.ConfigEntry, entry_id="test_switch_entry_failure"
+    )
     type(coordinator).config_entry = PropertyMock(return_value=config_entry_mock)
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][config_entry_mock.entry_id] = {
         "coordinator": coordinator,
-        "config": coordinator.data
+        "config": coordinator.data,
     }
     return coordinator
 
 
 @pytest.mark.asyncio
-async def test_switch_operation_success(hass: HomeAssistant, mock_coordinator_switch_success):
+async def test_switch_operation_success(
+    hass: HomeAssistant, mock_coordinator_switch_success
+):
     """Test successful switch setup, attribute checks, and turn_on/turn_off operations."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
 
-    await async_setup_entry(hass, mock_coordinator_switch_success.config_entry, add_entities_callback)
+    await async_setup_entry(
+        hass, mock_coordinator_switch_success.config_entry, add_entities_callback
+    )
     add_entities_callback.assert_called_once()
     entities = add_entities_callback.call_args[0][0]
     assert len(entities) == 2
 
     # Switch 1: Main Heating (ONOFFAUTO type)
     heating_switch_config = mock_coordinator_switch_success.data["switches"][0]
-    heating_switch = next(e for e in entities if e.entity_description.key == heating_switch_config["param"])
+    heating_switch = next(
+        e
+        for e in entities
+        if e.entity_description.key == heating_switch_config["param"]
+    )
 
     assert isinstance(heating_switch, InnotempSwitch)
-    assert heating_switch.unique_id == f"{mock_coordinator_switch_success.config_entry.entry_id}-{heating_switch_config['param']}"
+    assert (
+        heating_switch.unique_id
+        == f"{mock_coordinator_switch_success.config_entry.entry_id}-{heating_switch_config['param']}"
+    )
     assert heating_switch.name == "Main Heating"
     assert heating_switch.device_info is not None
-    assert heating_switch.is_on is False # Initial state from "heating_mode": 0
+    assert heating_switch.is_on is False  # Initial state from "heating_mode": 0
 
     # Test turn_on
     mock_coordinator_switch_success.api_client.async_send_command.reset_mock()
@@ -92,7 +132,7 @@ async def test_switch_operation_success(hass: HomeAssistant, mock_coordinator_sw
     )
     # Simulate state update after command
     mock_coordinator_switch_success.data["heating_mode"] = 1
-    heating_switch.async_write_ha_state() # Manually trigger update for test if coordinator doesn't auto-push
+    heating_switch.async_write_ha_state()  # Manually trigger update for test if coordinator doesn't auto-push
     assert heating_switch.is_on is True
 
     # Test turn_off
@@ -107,8 +147,10 @@ async def test_switch_operation_success(hass: HomeAssistant, mock_coordinator_sw
 
     # Switch 2: Ventilation Fan (ONOFF type)
     fan_switch_config = mock_coordinator_switch_success.data["switches"][1]
-    fan_switch = next(e for e in entities if e.entity_description.key == fan_switch_config["param"])
-    assert fan_switch.is_on is True # Initial state from "fan_power": 1
+    fan_switch = next(
+        e for e in entities if e.entity_description.key == fan_switch_config["param"]
+    )
+    assert fan_switch.is_on is True  # Initial state from "fan_power": 1
 
     # Test turn_off for ONOFF type
     mock_coordinator_switch_success.api_client.async_send_command.reset_mock()
@@ -122,20 +164,26 @@ async def test_switch_operation_success(hass: HomeAssistant, mock_coordinator_sw
 
 
 @pytest.mark.asyncio
-async def test_switch_operation_failure(hass: HomeAssistant, mock_coordinator_switch_failure, caplog):
+async def test_switch_operation_failure(
+    hass: HomeAssistant, mock_coordinator_switch_failure, caplog
+):
     """Test switch behavior with API errors and missing data."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
 
-    await async_setup_entry(hass, mock_coordinator_switch_failure.config_entry, add_entities_callback)
+    await async_setup_entry(
+        hass, mock_coordinator_switch_failure.config_entry, add_entities_callback
+    )
     add_entities_callback.assert_called_once()
     entities = add_entities_callback.call_args[0][0]
     assert len(entities) == 2
 
     # Switch 1: Faulty Switch (API command fails)
     faulty_switch_config = mock_coordinator_switch_failure.data["switches"][0]
-    faulty_switch = next(e for e in entities if e.entity_description.key == faulty_switch_config["param"])
+    faulty_switch = next(
+        e for e in entities if e.entity_description.key == faulty_switch_config["param"]
+    )
 
-    assert faulty_switch.is_on is False # Initial state
+    assert faulty_switch.is_on is False  # Initial state
 
     # Attempt to turn on, expecting API failure
     mock_coordinator_switch_failure.api_client.async_send_command.reset_mock()
@@ -146,13 +194,21 @@ async def test_switch_operation_failure(hass: HomeAssistant, mock_coordinator_sw
         room_id="201", param="faulty_switch", val_new=1, val_prev=0
     )
     # Check logs for error message (actual message depends on implementation)
-    assert any("Error sending command to Innotemp API" in record.message for record in caplog.records if record.levelname == "ERROR")
+    assert any(
+        "Error sending command to Innotemp API" in record.message
+        for record in caplog.records
+        if record.levelname == "ERROR"
+    )
     # State should ideally not change if the command failed
     assert faulty_switch.is_on is False
 
     # Switch 2: Switch with missing data key in coordinator
     missing_data_switch_config = mock_coordinator_switch_failure.data["switches"][1]
-    missing_data_switch = next(e for e in entities if e.entity_description.key == missing_data_switch_config["param"])
+    missing_data_switch = next(
+        e
+        for e in entities
+        if e.entity_description.key == missing_data_switch_config["param"]
+    )
 
     assert missing_data_switch.name == "Switch Missing Data"
     # The is_on property should handle cases where the data key is missing
@@ -164,9 +220,15 @@ async def test_switch_operation_failure(hass: HomeAssistant, mock_coordinator_sw
     mock_coordinator_switch_failure.api_client.async_send_command.reset_mock()
     caplog.clear()
     await missing_data_switch.async_turn_on()
-     # val_prev will be 0 because its state was False (due to missing data)
+    # val_prev will be 0 because its state was False (due to missing data)
     mock_coordinator_switch_failure.api_client.async_send_command.assert_called_once_with(
         room_id="202", param="missing_data_switch", val_new=1, val_prev=0
     )
-    assert any("Error sending command to Innotemp API" in record.message for record in caplog.records if record.levelname == "ERROR")
-    assert missing_data_switch.is_on is False # State should remain unchanged due to API error & missing data
+    assert any(
+        "Error sending command to Innotemp API" in record.message
+        for record in caplog.records
+        if record.levelname == "ERROR"
+    )
+    assert (
+        missing_data_switch.is_on is False
+    )  # State should remain unchanged due to API error & missing data

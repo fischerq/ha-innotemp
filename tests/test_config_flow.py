@@ -35,9 +35,9 @@ async def test_config_flow_success(hass: HomeAssistant) -> None:
     with patch(
         "custom_components.innotemp.config_flow.InnotempApiClient.async_login",
         return_value=True,  # Simulate successful login
-    ) as mock_login, patch( # Also mock get_config if it's called after login
+    ) as mock_login, patch(  # Also mock get_config if it's called after login
         "custom_components.innotemp.config_flow.InnotempApiClient.async_get_config",
-        return_value={"some_key": "some_value"}, # Simulate some config data
+        return_value={"some_key": "some_value"},  # Simulate some config data
     ):
         result2 = await hass.config_entries.flow.async_configure(
             result["flow_id"], user_input
@@ -48,7 +48,9 @@ async def test_config_flow_success(hass: HomeAssistant) -> None:
     assert result2["type"] == data_entry_flow.FlowResultType.CREATE_ENTRY
     # Access the actual ConfigEntry object via result2.result
     assert result2.result is not None
-    assert result2.result.title == "Innotemp Heating Controller" # Title might be just host or a fixed string
+    assert (
+        result2.result.title == "Innotemp Heating Controller"
+    )  # Title might be just host or a fixed string
     assert result2.result.data == user_input
     assert result2.result.domain == DOMAIN
     mock_login.assert_called_once()
@@ -123,7 +125,10 @@ async def test_config_flow_failure(hass: HomeAssistant) -> None:
     assert result_http_host is not None
     assert result_http_host["type"] == data_entry_flow.FlowResultType.FORM
     assert result_http_host["errors"] is not None
-    assert result_http_host["errors"].get(CONF_HOST) == "Hostname should not include '://'. Enter just the address."
+    assert (
+        result_http_host["errors"].get(CONF_HOST)
+        == "Hostname should not include '://'. Enter just the address."
+    )
 
     # Scenario 4: Invalid Host - Too short (e.g. "h")
     result_short_host_init = await hass.config_entries.flow.async_init(
@@ -142,7 +147,10 @@ async def test_config_flow_failure(hass: HomeAssistant) -> None:
     assert result_short_host is not None
     assert result_short_host["type"] == data_entry_flow.FlowResultType.FORM
     assert result_short_host["errors"] is not None
-    assert result_short_host["errors"].get(CONF_HOST) == "Hostname is too short or invalid format."
+    assert (
+        result_short_host["errors"].get(CONF_HOST)
+        == "Hostname is too short or invalid format."
+    )
 
     # Scenario 5: Invalid Host - "http" or "https" as hostname
     result_keyword_host_init = await hass.config_entries.flow.async_init(
@@ -150,7 +158,7 @@ async def test_config_flow_failure(hass: HomeAssistant) -> None:
     )
     assert result_keyword_host_init is not None
     user_input_keyword_host = {
-        CONF_HOST: "http", # or "https"
+        CONF_HOST: "http",  # or "https"
         CONF_USERNAME: "testuser",
         CONF_PASSWORD: "testpassword",
     }
@@ -161,4 +169,7 @@ async def test_config_flow_failure(hass: HomeAssistant) -> None:
     assert result_keyword_host is not None
     assert result_keyword_host["type"] == data_entry_flow.FlowResultType.FORM
     assert result_keyword_host["errors"] is not None
-    assert result_keyword_host["errors"].get(CONF_HOST) == "Hostname cannot be 'http' or 'https'. Enter a valid IP address or hostname."
+    assert (
+        result_keyword_host["errors"].get(CONF_HOST)
+        == "Hostname cannot be 'http' or 'https'. Enter a valid IP address or hostname."
+    )

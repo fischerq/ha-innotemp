@@ -62,13 +62,17 @@ class InnotempApiClient:
         except aiohttp.ClientResponseError as e:
             # Log the response text if available, as it might contain useful error details
             response_text_on_error = ""
-            if hasattr(e, "response") and e.response is not None: # check if response attribute exists
+            if (
+                hasattr(e, "response") and e.response is not None
+            ):  # check if response attribute exists
                 try:
                     response_text_on_error = await e.response.text()
                 except Exception:
                     response_text_on_error = "Could not retrieve response text."
 
-            _LOGGER.warning(f"API request to {endpoint} failed: {e}. Response: '{response_text_on_error}'")
+            _LOGGER.warning(
+                f"API request to {endpoint} failed: {e}. Response: '{response_text_on_error}'"
+            )
             # Check if it's a potential session timeout error
             # The API analysis didn't specify the exact error, assuming a 401 or similar
             if e.status in [401, 403] and attempt == 1:

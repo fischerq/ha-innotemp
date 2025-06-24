@@ -44,7 +44,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Please remove and re-add the integration."
         )
         invalid_host_detected = True
-    elif len(host) < 3: # Basic sanity check
+    elif len(host) < 3:  # Basic sanity check
         _LOGGER.error(
             f"Stored Innotemp configuration host '{host}' is too short or invalid. "
             "Please remove and re-add the integration with a valid host."
@@ -52,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         invalid_host_detected = True
 
     if invalid_host_detected:
-        return False # Abort setup early
+        return False  # Abort setup early
 
     username = entry.data["username"]
     password = entry.data["password"]

@@ -5,7 +5,9 @@ import asyncio
 import pytest
 
 from custom_components.innotemp.coordinator import InnotempDataUpdateCoordinator
-from custom_components.innotemp.api import InnotempApiClient # For type hinting if needed
+from custom_components.innotemp.api import (
+    InnotempApiClient,
+)  # For type hinting if needed
 
 
 @pytest.fixture
@@ -17,7 +19,7 @@ def mock_api_client_success():
 
     # Simulate the API client calling the callback with data when SSE connects
     async def mock_connect(callback):
-        await asyncio.sleep(0.01) # Simulate async operation
+        await asyncio.sleep(0.01)  # Simulate async operation
         callback({"sensor1": "value1", "status": "connected"})
         # Keep the "connection" alive by not returning, or by simulating a long-running task
         # For this test, we'll let it complete after one callback.
@@ -27,20 +29,21 @@ def mock_api_client_success():
     client.async_sse_connect.side_effect = mock_connect
     return client
 
+
 @pytest.fixture
 def mock_api_client_failure():
     """Fixture for a mock InnotempApiClient that simulates a connection failure or error."""
     client = MagicMock(spec=InnotempApiClient)
     # Simulate failure to connect or an error during connection
     client.async_sse_connect = AsyncMock(side_effect=Exception("SSE Connection Failed"))
-    client.async_sse_disconnect = AsyncMock() # Should still be callable for cleanup
+    client.async_sse_disconnect = AsyncMock()  # Should still be callable for cleanup
     return client
 
 
 @pytest.mark.asyncio
 async def test_coordinator_success(hass, mock_api_client_success):
     """Test successful data retrieval and update via SSE."""
-    logger = logging.getLogger(__name__) # Get a logger instance
+    logger = logging.getLogger(__name__)  # Get a logger instance
     coordinator = InnotempDataUpdateCoordinator(hass, logger, mock_api_client_success)
 
     # Start the coordinator and trigger the first refresh which starts SSE
@@ -61,12 +64,13 @@ async def test_coordinator_success(hass, mock_api_client_success):
     mock_api_client_success.async_sse_disconnect.assert_called_once()
 
 
-import logging # Ensure logging is imported
+import logging  # Ensure logging is imported
+
 
 @pytest.mark.asyncio
 async def test_coordinator_failure(hass, mock_api_client_failure, caplog):
     """Test coordinator behavior on SSE connection failure and graceful shutdown."""
-    logger = logging.getLogger(__name__) # Get a logger instance
+    logger = logging.getLogger(__name__)  # Get a logger instance
     coordinator = InnotempDataUpdateCoordinator(hass, logger, mock_api_client_failure)
 
     # Attempt to start the coordinator and connect to SSE
@@ -80,9 +84,9 @@ async def test_coordinator_failure(hass, mock_api_client_failure, caplog):
     # For now, let's assume first_refresh will trigger the connect attempt.
 
     # Patch logger to check for error messages
-    with patch.object(coordinator.logger, 'error') as mock_logger_error:
+    with patch.object(coordinator.logger, "error") as mock_logger_error:
         await coordinator.async_config_entry_first_refresh()
-        await asyncio.sleep(0.05) # Allow time for async operations
+        await asyncio.sleep(0.05)  # Allow time for async operations
 
         # Check if connect was attempted
         mock_api_client_failure.async_sse_connect.assert_called_once()
@@ -93,11 +97,14 @@ async def test_coordinator_failure(hass, mock_api_client_failure, caplog):
         # This assertion might need adjustment based on actual logging.
         # Example: mock_logger_error.assert_any_call(f"Error during SSE connection: SSE Connection Failed", exc_info=True)
         # A more robust way is to check caplog if the logger is standard.
-        assert any("SSE Connection Failed" in record.message for record in caplog.records if record.levelname == "ERROR")
-
+        assert any(
+            "SSE Connection Failed" in record.message
+            for record in caplog.records
+            if record.levelname == "ERROR"
+        )
 
     # Ensure data is None or some default if connection failed
-    assert coordinator.data is None # Or whatever the initial/default state is
+    assert coordinator.data is None  # Or whatever the initial/default state is
 
     # Test shutdown even after failure
     await coordinator.async_shutdown()
