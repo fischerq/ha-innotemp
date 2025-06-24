@@ -222,19 +222,36 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
     @property
     def is_on(self) -> bool | None:
         """Return true if switch is on."""
-        # Assuming the value in coordinator.data corresponds to the ON/OFF state
-        # This mapping (0=OFF, 1=ON, 2=AUTO) needs to be handled based on the API spec
+        # Ensure coordinator data is available before proceeding
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                "InnotempSwitch.is_on: Coordinator data is None for entity %s (param_id: %s). Returning None for state.",
+                self.entity_id,
+                self._param_id
+            )
+            return None
+
         current_value = self.coordinator.data.get(self._param_id)
-        if current_value is not None:
-            # Map API value to Home Assistant state
-            return current_value == 1
-        return None
+        if current_value is None:
+            _LOGGER.debug(
+                "InnotempSwitch.is_on: Param_id %s not found in coordinator data for entity %s. Data: %s. Returning None for state.",
+                self._param_id,
+                self.entity_id,
+                self.coordinator.data
+            )
+            return None
+
+        # Assuming 1 is ON, 0 is OFF. Adapt if API uses different values.
+        return current_value == 1
 
     async def async_turn_on(self, **kwargs) -> None:
         """Turn the switch on."""
+        if self.coordinator.data is None:
+            _LOGGER.warning(f"Cannot turn on {self.entity_id}, coordinator data is None.")
+            return
         current_value = self.coordinator.data.get(self._param_id)
         if current_value is None:
-            _LOGGER.warning(f"Cannot turn on {self.entity_id}, current state unknown")
+            _LOGGER.warning(f"Cannot turn on {self.entity_id}, current state for param {self._param_id} unknown in coordinator data.")
             return
 
         # Assuming 1 is ON, 0 is OFF, 2 is AUTO
@@ -250,9 +267,12 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
 
     async def async_turn_off(self, **kwargs) -> None:
         """Turn the switch off."""
+        if self.coordinator.data is None:
+            _LOGGER.warning(f"Cannot turn off {self.entity_id}, coordinator data is None.")
+            return
         current_value = self.coordinator.data.get(self._param_id)
         if current_value is None:
-            _LOGGER.warning(f"Cannot turn off {self.entity_id}, current state unknown")
+            _LOGGER.warning(f"Cannot turn off {self.entity_id}, current state for param {self._param_id} unknown in coordinator data.")
             return
 
         # Assuming 1 is ON, 0 is OFF, 2 is AUTO
