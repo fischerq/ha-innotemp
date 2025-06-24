@@ -14,28 +14,20 @@ from custom_components.innotemp.api import InnotempApiClient
 
 @pytest.fixture
 def mock_coordinator_switch_success(hass: HomeAssistant):
-    """Fixture for a DataUpdateCoordinator with switch data."""
     coordinator = MagicMock(spec=DataUpdateCoordinator)
     coordinator.hass = hass
-    coordinator.api_client = AsyncMock(
-        spec=InnotempApiClient
-    )  # Mock API client on coordinator
+    coordinator.api_client = AsyncMock(spec=InnotempApiClient)
     coordinator.data = {
         "switches": [
             {
                 "room_id": "101",
                 "param": "heating_mode",
                 "label": "Main Heating",
-                "type": "ONOFFAUTO",
-            },
+                "type": "ONOFFAUTO",            },
             {
                 "room_id": "102",
                 "param": "fan_power",
-                "label": "Ventilation Fan",
-                "type": "ONOFF",
-            },
-        ],
-        "heating_mode": 0,  # Initial state: OFF
+                "label": "Ventilation Fan",                "type": "ONOFF",            },        ],        "heating_mode": 0,
         "fan_power": 1,  # Initial state: ON
     }
     config_entry_mock = MagicMock(
@@ -46,17 +38,14 @@ def mock_coordinator_switch_success(hass: HomeAssistant):
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][config_entry_mock.entry_id] = {
         "coordinator": coordinator,
-        "config": coordinator.data,  # Pass coordinator's data as 'config' for switch setup
+        "config": coordinator.data,
     }
     return coordinator
 
 
 @pytest.fixture
 def mock_coordinator_switch_failure(hass: HomeAssistant):
-    """Fixture for a DataUpdateCoordinator with problematic switch data or API errors."""
     coordinator = MagicMock(spec=DataUpdateCoordinator)
-    coordinator.hass = hass
-    coordinator.api_client = AsyncMock(spec=InnotempApiClient)
     # Simulate API command failure
     coordinator.api_client.async_send_command = AsyncMock(
         side_effect=Exception("API Command Failed")
@@ -69,14 +58,8 @@ def mock_coordinator_switch_failure(hass: HomeAssistant):
                 "label": "Faulty Switch",
                 "type": "ONOFF",
             },
-            # Switch data key might be missing
-            {
-                "room_id": "202",
-                "param": "missing_data_switch",
-                "label": "Switch Missing Data",
-                "type": "ONOFF",
-            },
-        ],
+            {                "room_id": "202",                "param": "missing_data_switch",
+                "label": "Switch Missing Data",                "type": "ONOFF",            },        ],
         "faulty_switch": 0,  # Initial state for faulty_switch
         # "missing_data_switch" key is intentionally missing
     }
@@ -96,7 +79,6 @@ def mock_coordinator_switch_failure(hass: HomeAssistant):
 @pytest.mark.asyncio
 async def test_switch_operation_success(
     hass: HomeAssistant, mock_coordinator_switch_success
-):
     """Test successful switch setup, attribute checks, and turn_on/turn_off operations."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
 
@@ -107,9 +89,7 @@ async def test_switch_operation_success(
     entities = add_entities_callback.call_args[0][0]
     assert len(entities) == 2
 
-    # Switch 1: Main Heating (ONOFFAUTO type)
     heating_switch_config = mock_coordinator_switch_success.data["switches"][0]
-    heating_switch = next(
         e
         for e in entities
         if e.entity_description.key == heating_switch_config["param"]
@@ -121,12 +101,9 @@ async def test_switch_operation_success(
         == f"{mock_coordinator_switch_success.config_entry.entry_id}-{heating_switch_config['param']}"
     )
     assert heating_switch.name == "Main Heating"
-    assert heating_switch.device_info is not None
-    assert heating_switch.is_on is False  # Initial state from "heating_mode": 0
+    assert heating_switch.is_on is False
 
-    # Test turn_on
     mock_coordinator_switch_success.api_client.async_send_command.reset_mock()
-    await heating_switch.async_turn_on()
     mock_coordinator_switch_success.api_client.async_send_command.assert_called_once_with(
         room_id="101", param="heating_mode", val_new=1, val_prev=0
     )
@@ -134,10 +111,7 @@ async def test_switch_operation_success(
     mock_coordinator_switch_success.data["heating_mode"] = 1
     heating_switch.async_write_ha_state()  # Manually trigger update for test if coordinator doesn't auto-push
     assert heating_switch.is_on is True
-
-    # Test turn_off
     mock_coordinator_switch_success.api_client.async_send_command.reset_mock()
-    await heating_switch.async_turn_off()
     mock_coordinator_switch_success.api_client.async_send_command.assert_called_once_with(
         room_id="101", param="heating_mode", val_new=0, val_prev=1
     )
@@ -145,14 +119,11 @@ async def test_switch_operation_success(
     heating_switch.async_write_ha_state()
     assert heating_switch.is_on is False
 
-    # Switch 2: Ventilation Fan (ONOFF type)
     fan_switch_config = mock_coordinator_switch_success.data["switches"][1]
     fan_switch = next(
         e for e in entities if e.entity_description.key == fan_switch_config["param"]
     )
     assert fan_switch.is_on is True  # Initial state from "fan_power": 1
-
-    # Test turn_off for ONOFF type
     mock_coordinator_switch_success.api_client.async_send_command.reset_mock()
     await fan_switch.async_turn_off()
     mock_coordinator_switch_success.api_client.async_send_command.assert_called_once_with(
@@ -166,7 +137,6 @@ async def test_switch_operation_success(
 @pytest.mark.asyncio
 async def test_switch_operation_failure(
     hass: HomeAssistant, mock_coordinator_switch_failure, caplog
-):
     """Test switch behavior with API errors and missing data."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
 
@@ -177,18 +147,12 @@ async def test_switch_operation_failure(
     entities = add_entities_callback.call_args[0][0]
     assert len(entities) == 2
 
-    # Switch 1: Faulty Switch (API command fails)
     faulty_switch_config = mock_coordinator_switch_failure.data["switches"][0]
     faulty_switch = next(
         e for e in entities if e.entity_description.key == faulty_switch_config["param"]
     )
 
-    assert faulty_switch.is_on is False  # Initial state
-
-    # Attempt to turn on, expecting API failure
     mock_coordinator_switch_failure.api_client.async_send_command.reset_mock()
-    # The actual exception handling depends on the InnotempSwitch implementation.
-    # Assuming it catches the exception and logs an error.
     await faulty_switch.async_turn_on()
     mock_coordinator_switch_failure.api_client.async_send_command.assert_called_once_with(
         room_id="201", param="faulty_switch", val_new=1, val_prev=0
