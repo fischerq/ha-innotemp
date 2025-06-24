@@ -237,16 +237,25 @@ class InnotempApiClient:
 
                                     if callback is None:
                                         _LOGGER.error("SSE callback is None. Cannot process data.")
-                                    elif not asyncio.iscoroutinefunction(callback) and not asyncio.iscoroutine(callback):
-                                        # Check if it's a coroutine function or a coroutine object
-                                        # The type hint is Awaitable, which usually means a coroutine function
-                                        # or a task/future. A direct check for coroutine function is good.
-                                        _LOGGER.error(
-                                            "SSE callback is not an awaitable coroutine function. Type: %s. Cannot process data.",
-                                            type(callback)
-                                        )
                                     else:
-                                        await callback(processed_data)
+                                        is_valid_awaitable_callable = False
+                                        if asyncio.iscoroutinefunction(callback):
+                                            is_valid_awaitable_callable = True
+                                        elif hasattr(callback, '__func__') and asyncio.iscoroutinefunction(callback.__func__):
+                                            # This handles bound methods of async def functions
+                                            is_valid_awaitable_callable = True
+
+                                        if is_valid_awaitable_callable:
+                                            await callback(processed_data)
+                                        else:
+                                            # This case should ideally not be reached if type hints are followed,
+                                            # but it's a safeguard.
+                                            # The error "TypeError: object NoneType can't be used in 'await' expression"
+                                            # would occur if callback is a sync function returning None.
+                                            _LOGGER.error(
+                                                "SSE callback is not a recognized awaitable coroutine function or bound method. Type: %s. Cannot process data.",
+                                                type(callback)
+                                            )
                             except (json.JSONDecodeError, IndexError) as e:
                                 _LOGGER.warning("Error processing SSE data line: %s", e)
 
