@@ -14,7 +14,7 @@ from .const import DOMAIN
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.DEBUG)  # Changed logger level to debug
+_LOGGER.setLevel(logging.WARNING)  # Changed logger level to warning
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -67,13 +67,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Login and fetch initial configuration
     try:
+        _LOGGER.debug("Attempting to login to Innotemp API with host: %s, username: %s, password_provided: %s",
+ host, username, bool(password))
         await api_client.async_login()
+        _LOGGER.debug("Login successful.")
+        _LOGGER.debug("Attempting to fetch initial configuration.")
         config_data = await api_client.async_get_config()
+        _LOGGER.debug("Configuration fetching complete.")
         if config_data is None:
             _LOGGER.error(
                 "Failed to fetch configuration from Innotemp device (config_data is None). Aborting setup."
             )
             return False
+        _LOGGER.debug(
+            f"Fetched initial config data: {config_data}"
+ )
         _LOGGER.debug("Initial configuration fetched: %s", config_data)
     except Exception as ex:
         _LOGGER.error("Failed to connect and fetch initial config: %s", ex)

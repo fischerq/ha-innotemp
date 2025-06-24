@@ -6,7 +6,7 @@ from typing import Callable, Awaitable, Dict, Any, Optional
 
 # Standard logger for Home Assistant components
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.DEBUG)  # Changed logger level to debug
+_LOGGER.setLevel(logging.WARNING)  # Changed logger level to debug
 
 # Custom exceptions for better error handling
 class InnotempApiError(Exception):
@@ -45,13 +45,21 @@ class InnotempApiClient:
         url = f"{self._base_url}/{endpoint}"
         try:
             # Use allow_redirects=False to prevent POST data from being lost on redirects
+            _LOGGER.debug("Sending %s request to %s with data: %s", method, url, data)
             async with self._session.request(
                 method, url, data=data, allow_redirects=False
             ) as response:
+                _LOGGER.debug(
+ "Received response from %s: Status %s, Headers: %s",
+                    url,
+ response.status,
+ response.headers,
+ )
+
                 # Check for redirects which may indicate a session timeout
                 if response.status in [301, 302]:
                     raise InnotempAuthError(
-                        "Request was redirected, session likely expired."
+ "Request to %s was redirected, session likely expired.", url
                     )
 
                 response.raise_for_status()
@@ -60,11 +68,13 @@ class InnotempApiClient:
                 response_text = await response.text()
                 if not response_text:
                     return {}  # Return empty dict for empty responses
+                _LOGGER.debug("Response body from %s: %s", url, response_text)
 
                 try:
                     return json.loads(response_text)
                 except json.JSONDecodeError:
                     _LOGGER.warning(
+
                         "Response from %s was not valid JSON: %s",
                         endpoint,
                         response_text,
@@ -105,6 +115,7 @@ class InnotempApiClient:
         login_data = {"un": self._username, "pw": self._password}
 
         # We don't use the wrapper here as this is the base authentication call
+        _LOGGER.debug("Attempting login to %s", self._base_url)
         url = f"{self._base_url}/groups.read.php"
         try:
             async with self._session.post(url, data=login_data) as response:
@@ -115,7 +126,11 @@ class InnotempApiClient:
                 if json_response.get("info") == "success":
                     _LOGGER.info("Successfully logged in to Innotemp controller.")
                     self._is_logged_in = True
+                    _LOGGER.debug(
+ "Login successful. Received response: %s", json_response
+                    )
                     return
+
                 else:
                     raise InnotempAuthError(
                         f"Login failed: Server responded with info: {json_response.get('info')}"
@@ -138,9 +153,11 @@ class InnotempApiClient:
             "POST", "roomconf.read.php", data=config_data
         )
         if config:
-            _LOGGER.debug("Successfully fetched configuration.")
+            _LOGGER.debug("Successfully fetched configuration: %s", config)
             return config
-        _LOGGER.error("Failed to fetch configuration.")
+        _LOGGER.error(
+ "Failed to fetch configuration. Received response: %s", config
+        )
         return None
 
     async def async_send_command(
@@ -159,11 +176,14 @@ class InnotempApiClient:
             "POST", "value.save.php", data=command_data
         )
         if result and result.get("info", "").startswith("success"):
-            _LOGGER.debug(f"Command sent successfully: {param} -> {val_new}")
+            _LOGGER.debug(
+ f"Command sent successfully for room {room_id}: {param} -> {val_new}. Response: {result}"
+            )
             return True
-        _LOGGER.error(f"Failed to send command: {param}. Response: {result}")
+        _LOGGER.error(
+ f"Failed to send command for room {room_id}: {param} -> {val_new}. Response: {result}"
+        )
         return False
-
     async def _get_signal_names(self) -> list[str]:
         """Fetch the list of signal names for the SSE stream."""
         # *** FIX: Add credentials to this call ***
@@ -172,7 +192,9 @@ class InnotempApiClient:
             "POST", "live_signal.read.php", data=init_data
         )
         if response and isinstance(response, list):
-            _LOGGER.debug(f"Fetched {len(response)} signal names.")
+            _LOGGER.debug(
+ f"Fetched {len(response)} signal names for SSE: %s", response
+            )
             return response
         _LOGGER.error("Failed to fetch signal names or response is not a list.")
         raise InnotempApiError("Could not fetch signal names.")
@@ -194,8 +216,11 @@ class InnotempApiClient:
                         await self.async_login()
 
                     signal_names = await self._get_signal_names()
+                    if not signal_names:
+                        _LOGGER.warning("No signal names fetched, cannot connect to SSE.")
+                        await asyncio.sleep(30) # Wait before retrying
+ continue
                     sse_url = f"{self._base_url}/live_signal.read.SSE.php"
-                    _LOGGER.info(f"Connecting to SSE stream at {sse_url}")
 
                     async with self._session.get(sse_url) as response:
                         response.raise_for_status()
@@ -206,6 +231,7 @@ class InnotempApiClient:
                                 data_str = line.strip()[5:].decode("utf-8")
                                 data_list = json.loads(data_str)
                                 if isinstance(data_list, list):
+ _LOGGER.debug("Received SSE data: %s", data_list)
                                     processed_data = dict(zip(signal_names, data_list))
                                     await callback(processed_data)
                             except (json.JSONDecodeError, IndexError) as e:
