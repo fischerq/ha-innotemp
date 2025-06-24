@@ -234,7 +234,19 @@ class InnotempApiClient:
                                 if isinstance(data_list, list):
                                     _LOGGER.debug("Received SSE data: %s", data_list)
                                     processed_data = dict(zip(signal_names, data_list))
-                                    await callback(processed_data)
+
+                                    if callback is None:
+                                        _LOGGER.error("SSE callback is None. Cannot process data.")
+                                    elif not asyncio.iscoroutinefunction(callback) and not asyncio.iscoroutine(callback):
+                                        # Check if it's a coroutine function or a coroutine object
+                                        # The type hint is Awaitable, which usually means a coroutine function
+                                        # or a task/future. A direct check for coroutine function is good.
+                                        _LOGGER.error(
+                                            "SSE callback is not an awaitable coroutine function. Type: %s. Cannot process data.",
+                                            type(callback)
+                                        )
+                                    else:
+                                        await callback(processed_data)
                             except (json.JSONDecodeError, IndexError) as e:
                                 _LOGGER.warning("Error processing SSE data line: %s", e)
 
