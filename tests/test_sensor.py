@@ -48,7 +48,10 @@ def mock_coordinator_failure(hass: HomeAssistant):
     coordinator.data = {
         "sensors": [
             {"param": "temp_sensor_missing_data", "label": "Attic Temperature (°C)"},
-            {"param": "sensor_no_label_data", "label": "No Label Sensor",},
+            {
+                "param": "sensor_no_label_data",
+                "label": "No Label Sensor",
+            },
             {"param": "sensor_none_value", "label": "Sensor With None (°C)"},
         ],
         "sensor_none_value": None,  # Explicit None value
@@ -67,7 +70,8 @@ def mock_coordinator_failure(hass: HomeAssistant):
 
 @pytest.mark.asyncio
 async def test_sensor_setup_and_state_success(
-    hass: HomeAssistant, mock_coordinator_success,
+    hass: HomeAssistant,
+    mock_coordinator_success,
 ):
     """Test successful sensor setup, state, unit, and device class."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
@@ -79,7 +83,7 @@ async def test_sensor_setup_and_state_success(
     entities = add_entities_callback.call_args[0][0]
     assert len(entities) == 4  # Based on mock_coordinator_success data
     temp_sensor_config = mock_coordinator_success.data["sensors"][0]
-    temp_sensor_entity = next( # Sensor 1: Temperature
+    temp_sensor_entity = next(  # Sensor 1: Temperature
         e for e in entities if e.entity_description.key == temp_sensor_config["param"]
     )
     assert isinstance(temp_sensor_entity, InnotempSensor)
@@ -144,7 +148,7 @@ async def test_sensor_state_failure(hass: HomeAssistant, mock_coordinator_failur
     assert len(entities) == 3  # Based on mock_coordinator_failure data
 
     missing_data_sensor_config = mock_coordinator_failure.data["sensors"][0]
-    missing_data_sensor_entity = next( # Sensor 1: Data key missing in coordinator.data
+    missing_data_sensor_entity = next(  # Sensor 1: Data key missing in coordinator.data
         e
         for e in entities
         if e.entity_description.key == missing_data_sensor_config["param"]
@@ -160,7 +164,9 @@ async def test_sensor_state_failure(hass: HomeAssistant, mock_coordinator_failur
     assert missing_data_sensor_entity.name == "Attic Temperature (°C)"
     no_label_data_sensor_config = mock_coordinator_failure.data["sensors"][1]
     no_label_data_sensor_entity = next(
-        e for e in entities if e.entity_description.key == no_label_data_sensor_config["param"]
+        e
+        for e in entities
+        if e.entity_description.key == no_label_data_sensor_config["param"]
     )
     assert no_label_data_sensor_entity.name == "No Label Sensor"
     assert (

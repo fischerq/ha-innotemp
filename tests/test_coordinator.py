@@ -6,7 +6,7 @@ import pytest
 
 from custom_components.innotemp.coordinator import InnotempDataUpdateCoordinator
 from custom_components.innotemp.api import (
- InnotempApiClient,
+    InnotempApiClient,
 )
 
 

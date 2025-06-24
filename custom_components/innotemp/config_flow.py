@@ -44,7 +44,7 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         data_schema = vol.Schema(
             {
-                vol.Required("host"): str, #_validate_host_input,
+                vol.Required("host"): str,  # _validate_host_input,
                 vol.Required("username"): str,
                 vol.Required("password"): str,
             }

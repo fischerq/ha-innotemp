@@ -23,11 +23,16 @@ def mock_coordinator_switch_success(hass: HomeAssistant):
                 "room_id": "101",
                 "param": "heating_mode",
                 "label": "Main Heating",
-                "type": "ONOFFAUTO",            },
+                "type": "ONOFFAUTO",
+            },
             {
                 "room_id": "102",
                 "param": "fan_power",
-                "label": "Ventilation Fan",                "type": "ONOFF",            },        ],        "heating_mode": 0,
+                "label": "Ventilation Fan",
+                "type": "ONOFF",
+            },
+        ],
+        "heating_mode": 0,
         "fan_power": 1,  # Initial state: ON
     }
     config_entry_mock = MagicMock(
@@ -58,8 +63,13 @@ def mock_coordinator_switch_failure(hass: HomeAssistant):
                 "label": "Faulty Switch",
                 "type": "ONOFF",
             },
-            {                "room_id": "202",                "param": "missing_data_switch",
-                "label": "Switch Missing Data",                "type": "ONOFF",            },        ],
+            {
+                "room_id": "202",
+                "param": "missing_data_switch",
+                "label": "Switch Missing Data",
+                "type": "ONOFF",
+            },
+        ],
         "faulty_switch": 0,  # Initial state for faulty_switch
         # "missing_data_switch" key is intentionally missing
     }
@@ -79,6 +89,7 @@ def mock_coordinator_switch_failure(hass: HomeAssistant):
 @pytest.mark.asyncio
 async def test_switch_operation_success(
     hass: HomeAssistant, mock_coordinator_switch_success
+):
     """Test successful switch setup, attribute checks, and turn_on/turn_off operations."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
 
@@ -90,10 +101,6 @@ async def test_switch_operation_success(
     assert len(entities) == 2
 
     heating_switch_config = mock_coordinator_switch_success.data["switches"][0]
-        e
-        for e in entities
-        if e.entity_description.key == heating_switch_config["param"]
-    )
 
     assert isinstance(heating_switch, InnotempSwitch)
     assert (
@@ -137,6 +144,7 @@ async def test_switch_operation_success(
 @pytest.mark.asyncio
 async def test_switch_operation_failure(
     hass: HomeAssistant, mock_coordinator_switch_failure, caplog
+):
     """Test switch behavior with API errors and missing data."""
     add_entities_callback = MagicMock(spec=AddEntitiesCallback)
 
