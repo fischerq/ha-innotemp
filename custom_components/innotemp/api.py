@@ -237,25 +237,14 @@ class InnotempApiClient:
 
                                     if callback is None:
                                         _LOGGER.error("SSE callback is None. Cannot process data.")
+                                    elif not callable(callback):
+                                        _LOGGER.error(
+                                            "SSE callback is not callable. Type: %s. Cannot process data.",
+                                            type(callback)
+                                        )
                                     else:
-                                        is_valid_awaitable_callable = False
-                                        if asyncio.iscoroutinefunction(callback):
-                                            is_valid_awaitable_callable = True
-                                        elif hasattr(callback, '__func__') and asyncio.iscoroutinefunction(callback.__func__):
-                                            # This handles bound methods of async def functions
-                                            is_valid_awaitable_callable = True
-
-                                        if is_valid_awaitable_callable:
-                                            await callback(processed_data)
-                                        else:
-                                            # This case should ideally not be reached if type hints are followed,
-                                            # but it's a safeguard.
-                                            # The error "TypeError: object NoneType can't be used in 'await' expression"
-                                            # would occur if callback is a sync function returning None.
-                                            _LOGGER.error(
-                                                "SSE callback is not a recognized awaitable coroutine function or bound method. Type: %s. Cannot process data.",
-                                                type(callback)
-                                            )
+                                        # Corrected: async_set_updated_data is synchronous
+                                        callback(processed_data)
                             except (json.JSONDecodeError, IndexError) as e:
                                 _LOGGER.warning("Error processing SSE data line: %s", e)
 
