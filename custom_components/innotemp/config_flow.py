@@ -67,7 +67,7 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             except Exception as ex:
                 _LOGGER.error("Failed to connect to Innotemp: %s", ex)
-                errors["base"] = "cannot_connect"
+                errors["base"] = "cannot_connect"+"Failed to connect to Innotemp: "+ str(ex)
                 # Show an error form if connection fails
                 return self.async_show_form(
                     step_id="user",
