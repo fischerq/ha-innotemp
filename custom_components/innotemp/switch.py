@@ -35,6 +35,22 @@ async def async_setup_entry(
     # Assuming coordinator.config holds the parsed configuration from async_get_config
     # This will need to be adapted based on the actual structure of the config data
     for room_id, room_data in config_data.items():
+        _LOGGER.debug(f"Processing room_id: {room_id}, room_data type: {type(room_data)}, room_data: {room_data}")
+
+        # Attempt to parse room_data if it's a string (JSON)
+        if isinstance(room_data, str):
+            try:
+                import json
+                room_data = json.loads(room_data)
+                _LOGGER.debug(f"Successfully parsed room_data string for room_id: {room_id}")
+            except json.JSONDecodeError:
+                _LOGGER.error(f"Failed to parse room_data string for room_id: {room_id}. Data: {room_data}", exc_info=True)
+                continue # Skip this room if data is malformed
+
+        if not isinstance(room_data, dict):
+            _LOGGER.error(f"Skipping room_id: {room_id} because room_data is not a dictionary. Type: {type(room_data)}, Data: {room_data}")
+            continue
+
         for param_id, param_data in room_data.get("parameters", {}).items():
             if param_data.get("type") == "ONOFFAUTO":  # Example type check
                 entities.append(

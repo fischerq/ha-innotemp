@@ -103,9 +103,14 @@ async def async_setup_entry(
         _LOGGER.error("Failed to connect and fetch initial config: %s", ex)
         return False
 
-    coordinator = InnotempDataUpdateCoordinator(hass, api_client)
+    # Correct instantiation of the coordinator, similar to __init__.py
+    # Use the module-level _LOGGER for consistency
+    coordinator = InnotempDataUpdateCoordinator(hass, _LOGGER, api_client)
 
     # Pass the coordinator's async_set_updated_data as the callback for SSE
+    # It's possible this whole async_setup_entry in config_flow.py is problematic
+    # if it races with or duplicates the one in __init__.py.
+    _LOGGER.debug("Config_flow.py: Setting up SSE connection via its async_setup_entry.")
     coordinator.sse_task = hass.async_create_task(
         api_client.async_sse_connect(coordinator.async_set_updated_data)
     )
