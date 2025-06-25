@@ -4,7 +4,7 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
-from homeassistant.helpers.device_registry import slugify # For fallback component ID
+from homeassistant.util.slugify import slugify # For fallback component ID
 from .const import DOMAIN
 
 
