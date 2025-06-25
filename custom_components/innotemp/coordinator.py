@@ -4,9 +4,25 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
-from homeassistant.util.slugify import slugify # For fallback component ID
+# from homeassistant.util import slugify # For fallback component ID - Assuming this failed
+import re # For local slugify
 from .const import DOMAIN
 
+# Local slugify implementation as a fallback
+def _local_slugify(text: str) -> str:
+    """A simple local slugify function."""
+    if not text:
+        return ""
+    text = text.lower()
+    # Remove unwanted characters, keep alphanumeric, spaces, and hyphens
+    text = re.sub(r"[^\w\s-]", "", text)
+    # Replace spaces with hyphens
+    text = re.sub(r"\s+", "-", text)
+    # Consolidate multiple hyphens
+    text = re.sub(r"-+", "-", text)
+    # Remove leading/trailing hyphens
+    text = text.strip("-")
+    return text
 
 class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
     """Innotemp data update coordinator."""
@@ -71,8 +87,8 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
                 # Prefer 'var', fallback to 'type', then to a slug of label if others missing
                 component_stable_id_part = comp_var or comp_type
                 if not component_stable_id_part and comp_label: # Fallback to slugified label if no var/type
-                    from homeassistant.helpers.device_registry import slugify
-                    component_stable_id_part = slugify(comp_label)
+                    # from homeassistant.helpers.device_registry import slugify # Old import
+                    component_stable_id_part = _local_slugify(comp_label) # Use local slugify
 
                 if component_stable_id_part: # Ensure we have something to make it unique
                     device_identifiers = {(DOMAIN, self._config_entry.unique_id, room_var, component_stable_id_part)}
