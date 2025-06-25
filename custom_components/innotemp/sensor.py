@@ -297,7 +297,7 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
         # _attr_unique_id is also set by InnotempCoordinatorEntity
         # self._attr_unique_id = f"{config_entry.unique_id}_{param_id}"
 
-        self._attr_native_unit_of_measurement = param_data.get("unit")
+        self._attr_native_unit_of_measurement = self._param_data.get("unit") # Use self._param_data
         self._param_id = param_id # Store the 'var' to fetch data from coordinator
 
         # Attempt to map units to device classes or set state class

@@ -91,7 +91,7 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
                     component_stable_id_part = _local_slugify(comp_label) # Use local slugify
 
                 if component_stable_id_part: # Ensure we have something to make it unique
-                    device_identifiers = {(DOMAIN, self._config_entry.unique_id, room_var, component_stable_id_part)}
+                    device_identifiers = {(DOMAIN, self._config_entry.entry_id, room_var, component_stable_id_part)}
                     device_name = comp_label or f"{room_label} - {component_stable_id_part}"
                     device_model = comp_type or "Component"
 
@@ -100,21 +100,21 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
                         "name": device_name,
                         "manufacturer": "Innotemp",
                         "model": device_model,
-                        "via_device": (DOMAIN, self._config_entry.unique_id, room_var),
+                        "via_device": (DOMAIN, self._config_entry.entry_id, room_var),
                     }
 
             # Fallback to room-level device if no specific component info or component_stable_id_part is missing
             return {
-                "identifiers": {(DOMAIN, self._config_entry.unique_id, room_var)},
+                "identifiers": {(DOMAIN, self._config_entry.entry_id, room_var)},
                 "name": room_label,
                 "manufacturer": "Innotemp",
                 "model": room_type,
-                "via_device": (DOMAIN, self._config_entry.unique_id), # Main controller device
+                "via_device": (DOMAIN, self._config_entry.entry_id), # Main controller device
             }
 
         # Default device for the whole integration if no specific room/component attributes are found
         return {
-            "identifiers": {(DOMAIN, self._config_entry.unique_id)},
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
             "name": "Innotemp Heating Controller", # Main controller device name
             "manufacturer": "Innotemp",
         }
