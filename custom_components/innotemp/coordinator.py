@@ -4,9 +4,11 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
+
 # from homeassistant.util import slugify # For fallback component ID - Assuming this failed
-import re # For local slugify
+import re  # For local slugify
 from .const import DOMAIN
+
 
 # Local slugify implementation as a fallback
 def _local_slugify(text: str) -> str:
@@ -23,6 +25,7 @@ def _local_slugify(text: str) -> str:
     # Remove leading/trailing hyphens
     text = text.strip("-")
     return text
+
 
 class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
     """Innotemp data update coordinator."""
@@ -86,16 +89,31 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
                 # Determine a stable ID for the component device part
                 # Prefer 'var', fallback to 'type', then to a slug of label if others missing
                 component_stable_id_part = comp_var or comp_type
-                if not component_stable_id_part and comp_label: # Fallback to slugified label if no var/type
+                if (
+                    not component_stable_id_part and comp_label
+                ):  # Fallback to slugified label if no var/type
                     # from homeassistant.helpers.device_registry import slugify # Old import
-                    component_stable_id_part = _local_slugify(comp_label) # Use local slugify
+                    component_stable_id_part = _local_slugify(
+                        comp_label
+                    )  # Use local slugify
 
-                if component_stable_id_part: # Ensure we have something to make it unique
-                    device_identifiers = {(DOMAIN, self._config_entry.entry_id, room_var, component_stable_id_part)}
+                if (
+                    component_stable_id_part
+                ):  # Ensure we have something to make it unique
+                    device_identifiers = {
+                        (
+                            DOMAIN,
+                            self._config_entry.entry_id,
+                            room_var,
+                            component_stable_id_part,
+                        )
+                    }
 
                     # Construct hierarchical name: "Room Label > Component Label"
                     # Fallback for component label if it's empty
-                    effective_comp_label = comp_label if comp_label else component_stable_id_part
+                    effective_comp_label = (
+                        comp_label if comp_label else component_stable_id_part
+                    )
                     device_name = f"{room_label} > {effective_comp_label}"
 
                     device_model = comp_type or "Component"
@@ -114,12 +132,15 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
                 "name": room_label,
                 "manufacturer": "Innotemp",
                 "model": room_type,
-                "via_device": (DOMAIN, self._config_entry.entry_id), # Main controller device
+                "via_device": (
+                    DOMAIN,
+                    self._config_entry.entry_id,
+                ),  # Main controller device
             }
 
         # Default device for the whole integration if no specific room/component attributes are found
         return {
             "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": "Innotemp Heating Controller", # Main controller device name
+            "name": "Innotemp Heating Controller",  # Main controller device name
             "manufacturer": "Innotemp",
         }

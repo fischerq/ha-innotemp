@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-import re # For stripping HTML
-import json # For parsing string values in config_data if necessary (in async_setup_entry)
+import re  # For stripping HTML
+import json  # For parsing string values in config_data if necessary (in async_setup_entry)
 
 from homeassistant.components.input_select import InputSelectEntity
 from homeassistant.config_entries import ConfigEntry
@@ -26,18 +26,20 @@ API_VALUE_TO_OPTION = {
 OPTION_TO_API_VALUE = {v: k for k, v in API_VALUE_TO_OPTION.items()}
 OPTIONS_LIST = list(API_VALUE_TO_OPTION.values())
 
+
 def _strip_html(text: str | None) -> str:
     """Remove HTML tags from a string."""
     if text is None:
         return ""
-    return re.sub(r'<[^>]+>', '', text).strip()
+    return re.sub(r"<[^>]+>", "", text).strip()
+
 
 def _extract_input_selects_from_room_component(
     component_data,  # This is the data for a specific component like 'param', 'pump'
     coordinator,
     entry,
-    room_attributes, # Attributes of the parent room
-    entities_list
+    room_attributes,  # Attributes of the parent room
+    entities_list,
 ):
     """
     Extracts input_select entities (from ONOFFAUTO units) from a component of room data.
@@ -53,12 +55,16 @@ def _extract_input_selects_from_room_component(
     elif isinstance(component_data, list):
         components_to_process.extend(component_data)
     else:
-        _LOGGER.debug(f"InputSelect: Unexpected component_data type: {type(component_data)} for room {room_attributes.get('var')}")
+        _LOGGER.debug(
+            f"InputSelect: Unexpected component_data type: {type(component_data)} for room {room_attributes.get('var')}"
+        )
         return
 
     for component_item_data in components_to_process:
         if not isinstance(component_item_data, dict):
-            _LOGGER.debug(f"InputSelect: Skipping non-dict item in component_data list for room {room_attributes.get('var')}: {component_item_data}")
+            _LOGGER.debug(
+                f"InputSelect: Skipping non-dict item in component_data list for room {room_attributes.get('var')}: {component_item_data}"
+            )
             continue
 
         component_attributes = component_item_data.get("@attributes", {})
@@ -75,13 +81,17 @@ def _extract_input_selects_from_room_component(
 
         for actual_entry in entries:
             if not isinstance(actual_entry, dict):
-                _LOGGER.debug(f"InputSelect: Skipping non-dict entry in entries list for room {room_attributes.get('var')}: {actual_entry}")
+                _LOGGER.debug(
+                    f"InputSelect: Skipping non-dict entry in entries list for room {room_attributes.get('var')}: {actual_entry}"
+                )
                 continue
 
             if actual_entry.get("unit") == "ONOFFAUTO":
                 param_id = actual_entry.get("var")
                 if not param_id:
-                    _LOGGER.warning(f"InputSelect: Found ONOFFAUTO entry without 'var' (param_id) in room {room_attributes.get('var')}, component {component_attributes}: {actual_entry}")
+                    _LOGGER.warning(
+                        f"InputSelect: Found ONOFFAUTO entry without 'var' (param_id) in room {room_attributes.get('var')}, component {component_attributes}: {actual_entry}"
+                    )
                     continue
 
                 # entities_list.append(
@@ -93,16 +103,18 @@ def _extract_input_selects_from_room_component(
                 # param_id,
                 # actual_entry
                 entities_list.append(
-                    InnotempInputSelect( # This class will be defined next
+                    InnotempInputSelect(  # This class will be defined next
                         coordinator,
                         entry,
                         room_attributes,
                         component_attributes,
                         param_id,
-                        actual_entry
+                        actual_entry,
                     )
                 )
-                _LOGGER.debug(f"InputSelect: Found ONOFFAUTO (potential input_select): room_var {room_attributes.get('var')}, component_var {component_attributes.get('var')}, item_var {param_id}, data {actual_entry}")
+                _LOGGER.debug(
+                    f"InputSelect: Found ONOFFAUTO (potential input_select): room_var {room_attributes.get('var')}, component_var {component_attributes.get('var')}, item_var {param_id}, data {actual_entry}"
+                )
 
 
 async def async_setup_entry(
@@ -114,15 +126,22 @@ async def async_setup_entry(
     config_data: dict = integration_data["config"]
 
     if config_data is None:
-        _LOGGER.warning("Innotemp input_select setup: config_data is None, skipping entity creation.")
+        _LOGGER.warning(
+            "Innotemp input_select setup: config_data is None, skipping entity creation."
+        )
         async_add_entities([])
         return
 
     entities = []
-    _LOGGER.debug("Innotemp input_select setup: Received config_data (first 500 chars): %s", str(config_data)[:500])
+    _LOGGER.debug(
+        "Innotemp input_select setup: Received config_data (first 500 chars): %s",
+        str(config_data)[:500],
+    )
 
     if not isinstance(config_data, dict):
-        _LOGGER.error(f"InputSelect: Config_data is not a dictionary as expected. Type: {type(config_data)}. Data: {config_data}")
+        _LOGGER.error(
+            f"InputSelect: Config_data is not a dictionary as expected. Type: {type(config_data)}. Data: {config_data}"
+        )
         async_add_entities([])
         return
 
@@ -130,7 +149,9 @@ async def async_setup_entry(
         actual_room_list = []
         if isinstance(top_level_value, list):
             actual_room_list = top_level_value
-        elif isinstance(top_level_value, dict) and top_level_value.get("@attributes",{}).get("type","").startswith("room"):
+        elif isinstance(top_level_value, dict) and top_level_value.get(
+            "@attributes", {}
+        ).get("type", "").startswith("room"):
             actual_room_list.append(top_level_value)
 
         if not actual_room_list and isinstance(top_level_value, str):
@@ -139,42 +160,55 @@ async def async_setup_entry(
                 if isinstance(parsed_value, list):
                     actual_room_list = parsed_value
             except json.JSONDecodeError:
-                _LOGGER.debug(f"InputSelect: Could not parse string value for key {top_level_key} as JSON list.")
+                _LOGGER.debug(
+                    f"InputSelect: Could not parse string value for key {top_level_key} as JSON list."
+                )
 
         if not actual_room_list:
             continue
 
         for room_data_dict in actual_room_list:
             if not isinstance(room_data_dict, dict):
-                _LOGGER.warning(f"InputSelect: Item in room list for key '{top_level_key}' is not a dictionary: {room_data_dict}")
+                _LOGGER.warning(
+                    f"InputSelect: Item in room list for key '{top_level_key}' is not a dictionary: {room_data_dict}"
+                )
                 continue
 
             room_attributes = room_data_dict.get("@attributes", {})
             if not room_attributes.get("var"):
-                _LOGGER.warning(f"InputSelect: Room missing '@attributes.var': {room_attributes}. Skipping.")
+                _LOGGER.warning(
+                    f"InputSelect: Room missing '@attributes.var': {room_attributes}. Skipping."
+                )
                 continue
 
             possible_containers_keys = [
-                "param", "pump", "piseq", "mixer", "drink", "radiator", "main"
+                "param",
+                "pump",
+                "piseq",
+                "mixer",
+                "drink",
+                "radiator",
+                "main",
             ]
 
             for container_key in possible_containers_keys:
                 component_data = room_data_dict.get(container_key)
                 if component_data:
                     _extract_input_selects_from_room_component(
-                        component_data,
-                        coordinator,
-                        entry,
-                        room_attributes,
-                        entities
+                        component_data, coordinator, entry, room_attributes, entities
                     )
 
     if not entities:
-        _LOGGER.info("No ONOFFAUTO (input_select) entities found in Innotemp configuration.")
+        _LOGGER.info(
+            "No ONOFFAUTO (input_select) entities found in Innotemp configuration."
+        )
     else:
-        _LOGGER.info(f"Found {len(entities)} Innotemp input_select entities to be added.")
+        _LOGGER.info(
+            f"Found {len(entities)} Innotemp input_select entities to be added."
+        )
 
     async_add_entities(entities)
+
 
 class InnotempInputSelect(InnotempCoordinatorEntity, InputSelectEntity):
     """Representation of an Innotemp InputSelect entity for ONOFFAUTO controls."""
@@ -185,26 +219,26 @@ class InnotempInputSelect(InnotempCoordinatorEntity, InputSelectEntity):
         config_entry: ConfigEntry,
         room_attributes: dict,
         component_attributes: dict,
-        param_id: str, # 'var' of the ONOFFAUTO entry
-        param_data: dict # The ONOFFAUTO entry's own data dict
+        param_id: str,  # 'var' of the ONOFFAUTO entry
+        param_data: dict,  # The ONOFFAUTO entry's own data dict
     ):
         """Initialize the Innotemp InputSelect entity."""
         self._room_attributes = room_attributes
         self._component_attributes = component_attributes
         self._param_id = param_id  # 'var' of the ONOFFAUTO entry
-        self._param_data = param_data # The ONOFFAUTO entry dict itself
+        self._param_data = param_data  # The ONOFFAUTO entry dict itself
 
         original_label = self._param_data.get("label", f"Control {self._param_id}")
         cleaned_label = _strip_html(original_label)
 
         entity_config = {
             "param": self._param_id,
-            "label": cleaned_label if cleaned_label else f"Control {self._param_id}"
+            "label": cleaned_label if cleaned_label else f"Control {self._param_id}",
         }
         super().__init__(coordinator, config_entry, entity_config)
 
-        self._api_room_id = room_attributes.get("var") # For API calls
-        self._attr_options = OPTIONS_LIST # ["Off", "On", "Auto"]
+        self._api_room_id = room_attributes.get("var")  # For API calls
+        self._attr_options = OPTIONS_LIST  # ["Off", "On", "Auto"]
 
         _LOGGER.debug(
             f"InnotempInputSelect initialized: name='{self.name}', unique_id='{self.unique_id}', "
@@ -218,7 +252,9 @@ class InnotempInputSelect(InnotempCoordinatorEntity, InputSelectEntity):
             _LOGGER.debug(
                 f"InnotempInputSelect.current_option: Coordinator data is None for entity {self.entity_id} (param_id: {self._param_id})."
             )
-            return None # Or a default option if that makes sense, e.g., OPTIONS_LIST[0]
+            return (
+                None  # Or a default option if that makes sense, e.g., OPTIONS_LIST[0]
+            )
 
         api_value = self.coordinator.data.get(self._param_id)
         if api_value is None:
@@ -242,11 +278,12 @@ class InnotempInputSelect(InnotempCoordinatorEntity, InputSelectEntity):
             )
             return None
 
-
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         if option not in OPTION_TO_API_VALUE:
-            _LOGGER.error(f"Invalid option '{option}' selected for {self.entity_id}. Valid options: {OPTIONS_LIST}")
+            _LOGGER.error(
+                f"Invalid option '{option}' selected for {self.entity_id}. Valid options: {OPTIONS_LIST}"
+            )
             return
 
         new_api_value = OPTION_TO_API_VALUE[option]
@@ -283,20 +320,27 @@ class InnotempInputSelect(InnotempCoordinatorEntity, InputSelectEntity):
                 room_id=self._api_room_id,
                 param=self._param_id,
                 val_new=new_api_value,
-                val_prev=previous_api_value # API client needs to handle if this is None
+                val_prev=previous_api_value,  # API client needs to handle if this is None
             )
             if success:
-                _LOGGER.info(f"Successfully sent command for {self.entity_id} to set option to '{option}'.")
+                _LOGGER.info(
+                    f"Successfully sent command for {self.entity_id} to set option to '{option}'."
+                )
                 # Optionally, immediately update coordinator data if API confirms change,
                 # or rely on SSE/next poll. For now, rely on external update.
                 # Example of immediate update (if your API confirms state synchronously):
                 # current_data = self.coordinator.data.copy() if self.coordinator.data else {}
                 # current_data[self._param_id] = new_api_value
                 # self.coordinator.async_set_updated_data(current_data)
-                await self.coordinator.async_request_refresh() # Request a refresh
+                await self.coordinator.async_request_refresh()  # Request a refresh
             else:
-                _LOGGER.error(f"Failed to send command for {self.entity_id} to set option to '{option}'.")
+                _LOGGER.error(
+                    f"Failed to send command for {self.entity_id} to set option to '{option}'."
+                )
         except Exception as e:
-            _LOGGER.error(f"Error sending command for {self.entity_id} to set option to '{option}': {e}", exc_info=True)
+            _LOGGER.error(
+                f"Error sending command for {self.entity_id} to set option to '{option}': {e}",
+                exc_info=True,
+            )
 
         # self.async_write_ha_state() # State will be updated by coordinator

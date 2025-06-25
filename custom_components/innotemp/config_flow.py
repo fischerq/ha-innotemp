@@ -67,7 +67,9 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             except Exception as ex:
                 _LOGGER.error("Failed to connect to Innotemp: %s", ex)
-                errors["base"] = "cannot_connect"+"Failed to connect to Innotemp: "+ str(ex)
+                errors["base"] = (
+                    "cannot_connect" + "Failed to connect to Innotemp: " + str(ex)
+                )
                 # Show an error form if connection fails
                 return self.async_show_form(
                     step_id="user",
@@ -110,7 +112,9 @@ async def async_setup_entry(
     # Pass the coordinator's async_set_updated_data as the callback for SSE
     # It's possible this whole async_setup_entry in config_flow.py is problematic
     # if it races with or duplicates the one in __init__.py.
-    _LOGGER.debug("Config_flow.py: Setting up SSE connection via its async_setup_entry.")
+    _LOGGER.debug(
+        "Config_flow.py: Setting up SSE connection via its async_setup_entry."
+    )
     coordinator.sse_task = hass.async_create_task(
         api_client.async_sse_connect(coordinator.async_set_updated_data)
     )

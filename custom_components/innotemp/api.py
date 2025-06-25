@@ -236,11 +236,13 @@ class InnotempApiClient:
                                     processed_data = dict(zip(signal_names, data_list))
 
                                     if callback is None:
-                                        _LOGGER.error("SSE callback is None. Cannot process data.")
+                                        _LOGGER.error(
+                                            "SSE callback is None. Cannot process data."
+                                        )
                                     elif not callable(callback):
                                         _LOGGER.error(
                                             "SSE callback is not callable. Type: %s. Cannot process data.",
-                                            type(callback)
+                                            type(callback),
                                         )
                                     else:
                                         # Corrected: async_set_updated_data is synchronous
