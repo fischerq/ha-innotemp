@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json # For parsing string values in config_data if necessary
+import re # For stripping HTML
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,12 @@ from .coordinator import (
 )  # Assuming InnotempCoordinatorEntity is in coordinator.py
 
 _LOGGER = logging.getLogger(__name__)
+
+def _strip_html(text: str | None) -> str:
+    """Remove HTML tags from a string."""
+    if text is None:
+        return ""
+    return re.sub(r'<[^>]+>', '', text).strip()
 
 
 async def async_setup_entry(
@@ -53,92 +60,129 @@ async def async_setup_entry(
 
 # Helper function to extract sensors from various parts of room data
 def _extract_sensors_from_room_component(
-    component_data, coordinator, entry, room_context_id, entities_list, component_key_hint=""
+    component_data,  # Data for a specific component like 'display', 'param'
+    coordinator,
+    entry,
+    room_attributes, # Attributes of the parent room
+    entities_list,
+    component_key_hint="" # e.g. "display", "param" - the key for component_data in room_data_dict
 ):
     """
     Extracts sensor entities from a component of room data.
-    Component_data can be a dict or a list of dicts.
-    Sensors are often found in 'input' lists within these components.
+    Component_data can be a dict or a list of dicts (e.g. multiple 'display' blocks).
+    Sensors are often found in 'input' or 'output' lists/dicts within these components.
     """
     if not component_data:
         return
 
-    items_to_check = []
+    # component_data could be, for example, the content of room_data_dict['display']
+    # This itself can be a list of display blocks, or a single display block dict.
+    component_items_to_process = []
     if isinstance(component_data, dict):
-        items_to_check.append(component_data)
+        component_items_to_process.append(component_data)
     elif isinstance(component_data, list):
-        items_to_check.extend(component_data)
+        component_items_to_process.extend(component_data)
     else:
-        _LOGGER.debug(f"Sensor: Unexpected component_data type: {type(component_data)} for room {room_context_id}, hint: {component_key_hint}")
+        _LOGGER.debug(f"Sensor: Unexpected component_data type: {type(component_data)} for room {room_attributes.get('var')}, hint: {component_key_hint}")
         return
 
-    for item in items_to_check:
-        if not isinstance(item, dict):
-            _LOGGER.debug(f"Sensor: Skipping non-dict item in component_data list for room {room_context_id}, hint: {component_key_hint}: {item}")
+    for component_item_data in component_items_to_process: # e.g., one 'display' block dict
+        if not isinstance(component_item_data, dict):
+            _LOGGER.debug(f"Sensor: Skipping non-dict item in component_data list for room {room_attributes.get('var')}, hint: {component_key_hint}: {component_item_data}")
             continue
 
+        # This is the attributes of the specific component block, like a 'display' item's attributes
+        current_component_attributes = component_item_data.get("@attributes", {})
+
         # Sensors are commonly found in 'input' arrays within components like 'display', 'param', etc.
-        # Also, some components might directly be sensor definitions if they have 'var' and 'unit'.
-
-        # Scenario 1: The item itself is a sensor definition (e.g. from a list of inputs)
-        if "var" in item and "unit" in item and item.get("unit") != "ONOFFAUTO":
-            param_id = item.get("var")
-            label = item.get("label", f"Sensor {param_id}")
-            unit = item.get("unit")
-
-            # Basic check to avoid creating sensors from empty/placeholder vars or units
-            if not param_id or not unit or not label:
-                _LOGGER.debug(f"Sensor: Skipping item, missing var, unit or label: {item} in room {room_context_id}")
-                continue
-
-            _LOGGER.debug(f"Sensor: Found potential sensor (direct item): room {room_context_id}, param_id {param_id}, data {item}")
-            entities_list.append(InnotempSensor(coordinator, entry, param_id, item))
-
-        # Scenario 2: The item contains an 'input' list (e.g. a 'display' or 'param' block)
-        input_list = item.get("input")
+        input_list = component_item_data.get("input")
         if isinstance(input_list, list):
-            for input_item in input_list:
-                if not isinstance(input_item, dict):
-                    _LOGGER.debug(f"Sensor: Skipping non-dict input_item in input_list for room {room_context_id}: {input_item}")
+            for sensor_candidate_data in input_list: # sensor_candidate_data is the sensor's own dict
+                if not isinstance(sensor_candidate_data, dict):
+                    _LOGGER.debug(f"Sensor: Skipping non-dict input_item in input_list for room {room_attributes.get('var')}, component {current_component_attributes}: {sensor_candidate_data}")
                     continue
 
-                if "var" in input_item and "unit" in input_item and input_item.get("unit") != "ONOFFAUTO":
-                    param_id = input_item.get("var")
-                    label = input_item.get("label", f"Sensor {param_id}") # Use input_item's label
-                    unit = input_item.get("unit")
+                if "var" in sensor_candidate_data and "unit" in sensor_candidate_data and sensor_candidate_data.get("unit") != "ONOFFAUTO":
+                    param_id = sensor_candidate_data.get("var")
+                    # Fallback for label if not present in sensor_candidate_data, though unlikely
+                    label = sensor_candidate_data.get("label", f"Sensor {param_id}")
+                    unit = sensor_candidate_data.get("unit")
 
-                    if not param_id or not unit or not label:
-                        _LOGGER.debug(f"Sensor: Skipping input_item, missing var, unit or label: {input_item} in room {room_context_id}")
+                    if not param_id or not unit or not label: # Basic check
+                        _LOGGER.debug(f"Sensor: Skipping input_item (missing var, unit, or label): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}")
                         continue
 
-                    _LOGGER.debug(f"Sensor: Found potential sensor (from input list): room {room_context_id}, param_id {param_id}, data {input_item}")
-                    entities_list.append(InnotempSensor(coordinator, entry, param_id, input_item))
+                    _LOGGER.debug(f"Sensor: Found potential sensor (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}")
+                    entities_list.append(
+                        InnotempSensor(
+                            coordinator,
+                            entry,
+                            room_attributes,
+                            current_component_attributes, # Attributes of the block containing this sensor (e.g. 'display' block)
+                            sensor_candidate_data # The sensor's own data dict {'var': ..., 'unit': ..., 'label': ...}
+                        )
+                    )
 
-        # Scenario 3: The item contains an 'output' list/dict (e.g. a 'piseq' block might have readable outputs)
-        output_data = item.get("output")
+        # Also check 'output' lists/dicts, as they might contain readable sensor values
+        output_data = component_item_data.get("output")
         if output_data:
             outputs_to_process = []
-            if isinstance(output_data, dict): # If 'output' is a single dict
+            if isinstance(output_data, dict):
                 outputs_to_process.append(output_data)
-            elif isinstance(output_data, list): # If 'output' is a list of dicts
+            elif isinstance(output_data, list):
                 outputs_to_process.extend(output_data)
 
-            for output_item in outputs_to_process:
-                if not isinstance(output_item, dict):
-                    _LOGGER.debug(f"Sensor: Skipping non-dict output_item for room {room_context_id}: {output_item}")
+            for sensor_candidate_data in outputs_to_process: # sensor_candidate_data is the sensor's own dict
+                if not isinstance(sensor_candidate_data, dict):
+                    _LOGGER.debug(f"Sensor: Skipping non-dict output_item for room {room_attributes.get('var')}, component {current_component_attributes}: {sensor_candidate_data}")
                     continue
 
-                if "var" in output_item and "unit" in output_item and output_item.get("unit") != "ONOFFAUTO":
-                    param_id = output_item.get("var")
-                    label = output_item.get("label", f"Sensor {param_id}")
-                    unit = output_item.get("unit")
+                if "var" in sensor_candidate_data and "unit" in sensor_candidate_data and sensor_candidate_data.get("unit") != "ONOFFAUTO":
+                    param_id = sensor_candidate_data.get("var")
+                    label = sensor_candidate_data.get("label", f"Sensor {param_id}")
+                    unit = sensor_candidate_data.get("unit")
 
-                    if not param_id or not unit or not label: # Ensure essential fields
-                        _LOGGER.debug(f"Sensor: Skipping output_item, missing var, unit or label: {output_item} in room {room_context_id}")
+                    if not param_id or not unit or not label:
+                        _LOGGER.debug(f"Sensor: Skipping output_item (missing var, unit or label): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}")
                         continue
 
-                    _LOGGER.debug(f"Sensor: Found potential sensor (from output list/dict): room {room_context_id}, param_id {param_id}, data {output_item}")
-                    entities_list.append(InnotempSensor(coordinator, entry, param_id, output_item))
+                    _LOGGER.debug(f"Sensor: Found potential sensor (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}")
+                    entities_list.append(
+                        InnotempSensor(
+                            coordinator,
+                            entry,
+                            room_attributes,
+                            current_component_attributes, # Attributes of the block containing this sensor
+                            sensor_candidate_data # The sensor's own data dict
+                        )
+                    )
+
+        # Fallback: If the component_item_data itself (e.g. a direct item in 'mixer' list not having 'input'/'output' sub-keys)
+        # has 'var' and 'unit', it might be a sensor. This is less common for complex components but possible for simpler ones.
+        # This was Scenario 1 before, let's refine it.
+        # This check should only apply if we haven't already processed inputs/outputs from this component_item_data,
+        # to avoid double-adding if a sensor is defined both directly and in an input list.
+        # However, typical structure is component_item_data -> input/output -> sensor_candidate_data.
+        # A direct sensor at component_item_data level would mean component_item_data IS sensor_candidate_data.
+        if not input_list and not output_data: # Only if no 'input' or 'output' sub-keys were processed
+            if "var" in component_item_data and "unit" in component_item_data and component_item_data.get("unit") != "ONOFFAUTO":
+                param_id = component_item_data.get("var")
+                label = component_item_data.get("label", f"Sensor {param_id}")
+                unit = component_item_data.get("unit")
+
+                if not param_id or not unit or not label:
+                    _LOGGER.debug(f"Sensor: Skipping component_item_data (missing var, unit or label): {component_item_data} in room {room_attributes.get('var')}")
+                else:
+                    _LOGGER.debug(f"Sensor: Found potential sensor (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}")
+                    entities_list.append(
+                        InnotempSensor(
+                            coordinator,
+                            entry,
+                            room_attributes,
+                            current_component_attributes, # In this case, component_item_data's attributes are the component's attributes
+                            component_item_data # And component_item_data is also the sensor's data
+                        )
+                    )
 
 
 async def async_setup_entry(
@@ -155,7 +199,7 @@ async def async_setup_entry(
         return
 
     entities = []
-    _LOGGER.debug("Innotemp sensor setup: Received config_data: %s", config_data)
+    _LOGGER.debug("Innotemp sensor setup: Received config_data (first 500 chars): %s", str(config_data)[:500])
 
     if not isinstance(config_data, dict):
         _LOGGER.error(f"Sensor: Config_data is not a dictionary as expected. Type: {type(config_data)}. Data: {config_data}")
@@ -163,51 +207,56 @@ async def async_setup_entry(
         return
 
     for top_level_key, top_level_value in config_data.items():
-        _LOGGER.debug(f"Sensor: Processing top_level_key: {top_level_key}, value type: {type(top_level_value)}")
+        #_LOGGER.debug(f"Sensor: Processing top_level_key: {top_level_key}, value type: {type(top_level_value)}")
 
         actual_room_list = []
-        if isinstance(top_level_value, list): # e.g. config_data["room"] = [room1, room2]
+        if isinstance(top_level_value, list):
             actual_room_list = top_level_value
         elif isinstance(top_level_value, dict) and top_level_value.get("@attributes",{}).get("type","").startswith("room"):
-            # If the top_level_value itself is a single room dictionary
             actual_room_list.append(top_level_value)
-        # Add other conditions if rooms can be nested differently, e.g. under config_data["foo"]["room"]
 
-        if not actual_room_list and isinstance(top_level_value, str): # Try parsing if string
+        if not actual_room_list and isinstance(top_level_value, str):
             try:
                 import json
                 parsed_value = json.loads(top_level_value)
                 if isinstance(parsed_value, list):
-                    _LOGGER.debug(f"Sensor: Successfully parsed string value for key {top_level_key} into a list.")
+                    #_LOGGER.debug(f"Sensor: Successfully parsed string value for key {top_level_key} into a list.")
                     actual_room_list = parsed_value
             except json.JSONDecodeError:
                 _LOGGER.debug(f"Sensor: Could not parse string value for key {top_level_key} as JSON list.")
 
         if not actual_room_list:
-            _LOGGER.debug(f"Sensor: No list of rooms found under key '{top_level_key}' or key itself is not a room list.")
+            #_LOGGER.debug(f"Sensor: No list of rooms found under key '{top_level_key}' or key itself is not a room list.")
             continue
 
-        for room_data_dict in actual_room_list:
+        for room_data_dict in actual_room_list: # room_data_dict is one whole room
             if not isinstance(room_data_dict, dict):
                 _LOGGER.warning(f"Sensor: Item in room list for key '{top_level_key}' is not a dictionary: {room_data_dict}")
                 continue
 
             room_attributes = room_data_dict.get("@attributes", {})
-            room_context_id = room_attributes.get("var", room_attributes.get("label", f"unknown_room_via_{top_level_key}"))
-            _LOGGER.debug(f"Sensor: Processing room: {room_context_id}, Data: {room_data_dict}")
+            if not room_attributes.get("var"): # Ensure room has a usable ID
+                _LOGGER.warning(f"Sensor: Room missing '@attributes.var': {room_attributes}. Skipping.")
+                continue
 
-            # Define sections within a room that might contain sensor definitions
-            # Sensors are often in 'input' lists, or 'output' lists/dicts for readable values.
-            # 'display', 'param', 'mixer', 'pump', 'piseq', 'radiator', 'drink', 'main'
+            #_LOGGER.debug(f"Sensor: Processing room: {room_attributes.get('var')}, Label: {room_attributes.get('label')}")
+
             possible_sensor_containers_keys = [
                 "display", "param", "mixer", "pump", "piseq", "radiator", "drink", "main"
             ]
 
             for container_key in possible_sensor_containers_keys:
+                # component_data is the content of 'display', 'param', etc.
+                # This can be a dictionary OR a list of dictionaries
                 component_data = room_data_dict.get(container_key)
                 if component_data:
                     _extract_sensors_from_room_component(
-                        component_data, coordinator, entry, room_context_id, entities, container_key
+                        component_data, # e.g., the dict/list for 'display' or 'param'
+                        coordinator,
+                        entry,
+                        room_attributes, # Attributes of the parent room
+                        entities,
+                        container_key # Pass the key name for better logging
                     )
 
     if not entities:
@@ -225,12 +274,21 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
         self,
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        param_id: str, # This is the 'var' from the config
-        param_data: dict, # This is the dict containing 'var', 'unit', 'label'
+        room_attributes: dict,      # Attributes of the parent room
+        component_attributes: dict, # Attributes of the component block (e.g. 'display')
+        sensor_data: dict,          # The sensor's own data dict {'var':..., 'unit':..., 'label':...}
     ) -> None:
         """Initialize the sensor."""
+        self._room_attributes = room_attributes
+        self._component_attributes = component_attributes
+        self._param_data = sensor_data # Renaming for clarity, was param_data
+
+        param_id = self._param_data.get("var")
+        original_label = self._param_data.get("label", f"Sensor {param_id}")
+        cleaned_label = _strip_html(original_label)
+
         # entity_config for InnotempCoordinatorEntity expects 'param' for unique_id part
-        entity_config = {"param": param_id, "label": param_data.get("label", f"Innotemp Sensor {param_id}")}
+        entity_config = {"param": param_id, "label": cleaned_label if cleaned_label else f"Sensor {param_id}"}
         super().__init__(coordinator, config_entry, entity_config)
 
         # _attr_name is already set by InnotempCoordinatorEntity using entity_config['label']

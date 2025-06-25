@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re # For stripping HTML
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -13,6 +14,12 @@ from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+def _strip_html(text: str | None) -> str:
+    """Remove HTML tags from a string."""
+    if text is None:
+        return ""
+    return re.sub(r'<[^>]+>', '', text).strip()
 
 
 async def async_setup_entry(
@@ -34,7 +41,11 @@ async def async_setup_entry(
 
 # Helper function to extract switches from various parts of room data
 def _extract_switches_from_room_component(
-    component_data, coordinator, entry, room_context_id, entities_list
+    component_data,  # This is the data for a specific component like 'param', 'pump'
+    coordinator,
+    entry,
+    room_attributes, # Attributes of the parent room
+    entities_list
 ):
     """
     Extracts switch entities from a component of room data (e.g., 'param', 'pump').
@@ -44,23 +55,29 @@ def _extract_switches_from_room_component(
     if not component_data:
         return
 
-    components_to_check = []
+    # component_data is the block for 'param', 'pump', etc.
+    # It can be a single dict or a list of such blocks (e.g. multiple 'pump' blocks)
+    components_to_process = []
     if isinstance(component_data, dict):
-        components_to_check.append(component_data)
+        components_to_process.append(component_data)
     elif isinstance(component_data, list):
-        components_to_check.extend(component_data)
+        components_to_process.extend(component_data)
     else:
-        _LOGGER.debug(f"Unexpected component_data type: {type(component_data)} for room {room_context_id}")
+        _LOGGER.debug(f"Switch: Unexpected component_data type: {type(component_data)} for room {room_attributes.get('var')}")
         return
 
-    for item in components_to_check:
-        if not isinstance(item, dict):
-            _LOGGER.debug(f"Skipping non-dict item in component_data list for room {room_context_id}: {item}")
+    for component_item_data in components_to_process: # e.g., one 'param' block or one 'pump' block
+        if not isinstance(component_item_data, dict):
+            _LOGGER.debug(f"Switch: Skipping non-dict item in component_data list for room {room_attributes.get('var')}: {component_item_data}")
             continue
 
-        entry_data = item.get("entry")
+        component_attributes = component_item_data.get("@attributes", {})
+        # component_context_id = component_attributes.get("var") or component_attributes.get("type") or component_attributes.get("label","unknown_component")
+
+
+        entry_data = component_item_data.get("entry")
         if not entry_data:
-            continue
+            continue # This component_item_data (e.g. a pump) might not have a direct 'entry' for switches
 
         entries = []
         if isinstance(entry_data, dict):
@@ -68,22 +85,28 @@ def _extract_switches_from_room_component(
         elif isinstance(entry_data, list):
             entries.extend(entry_data)
 
-        for actual_entry in entries:
+        for actual_entry in entries: # actual_entry is the switch definition
             if not isinstance(actual_entry, dict):
-                _LOGGER.debug(f"Skipping non-dict entry in entries list for room {room_context_id}: {actual_entry}")
+                _LOGGER.debug(f"Switch: Skipping non-dict entry in entries list for room {room_attributes.get('var')}: {actual_entry}")
                 continue
 
             if actual_entry.get("unit") == "ONOFFAUTO":
                 param_id = actual_entry.get("var")
                 if not param_id:
-                    _LOGGER.warning(f"Found ONOFFAUTO entry without 'var' (param_id) in room {room_context_id}: {actual_entry}")
+                    _LOGGER.warning(f"Switch: Found ONOFFAUTO entry without 'var' (param_id) in room {room_attributes.get('var')}, component {component_attributes}: {actual_entry}")
                     continue
 
-                # param_data for the InnotempSwitch is the entry itself
                 entities_list.append(
-                    InnotempSwitch(coordinator, entry, room_context_id, param_id, actual_entry)
+                    InnotempSwitch(
+                        coordinator,
+                        entry,
+                        room_attributes, # Pass full room attributes
+                        component_attributes, # Pass full component attributes for device grouping
+                        param_id, # This is the switch's own 'var'
+                        actual_entry # This is the switch's own data dict
+                    )
                 )
-                _LOGGER.debug(f"Found ONOFFAUTO switch: room {room_context_id}, param_id {param_id}, data {actual_entry}")
+                _LOGGER.debug(f"Switch: Found ONOFFAUTO switch: room_var {room_attributes.get('var')}, component_var {component_attributes.get('var')}, switch_var {param_id}, data {actual_entry}")
 
 
 async def async_setup_entry(
@@ -95,93 +118,68 @@ async def async_setup_entry(
     config_data: dict = integration_data["config"]
 
     if config_data is None:
-        _LOGGER.warning(
-            "Innotemp switch setup: config_data is None, skipping switch entity creation."
-        )
+        _LOGGER.warning("Innotemp switch setup: config_data is None, skipping switch entity creation.")
         async_add_entities([])
         return
 
     entities = []
 
-    # The top-level config_data is expected to be a dictionary.
-    # One of its keys (e.g., "room") might contain a list of actual room configurations.
     if not isinstance(config_data, dict):
-        _LOGGER.error(f"Config_data is not a dictionary as expected. Type: {type(config_data)}. Data: {config_data}")
+        _LOGGER.error(f"Switch: Config_data is not a dictionary as expected. Type: {type(config_data)}. Data: {config_data}")
         async_add_entities([])
         return
 
     for top_level_key, top_level_value in config_data.items():
-        _LOGGER.debug(f"Processing top_level_key: {top_level_key}, value type: {type(top_level_value)}")
+        #_LOGGER.debug(f"Switch: Processing top_level_key: {top_level_key}, value type: {type(top_level_value)}")
 
         actual_room_list = []
         if isinstance(top_level_value, list):
             actual_room_list = top_level_value
-        elif isinstance(top_level_value, dict) and top_level_key == "room" and isinstance(top_level_value.get("item"), list):
-            # Handling cases where rooms might be nested further, e.g. config_data['room']['item'] = [...]
-            # This is speculative based on common XML/JSON patterns, adjust if direct list is always config_data['room']
-            actual_room_list = top_level_value.get("item")
         elif isinstance(top_level_value, dict) and top_level_value.get("@attributes",{}).get("type","").startswith("room"):
-             # If the top_level_value itself is a single room dictionary (e.g. if config_data was just one room)
             actual_room_list.append(top_level_value)
 
+        if not actual_room_list and isinstance(top_level_value, str):
+            try:
+                import json
+                parsed_value = json.loads(top_level_value)
+                if isinstance(parsed_value, list):
+                    #_LOGGER.debug(f"Switch: Successfully parsed string value for key {top_level_key} into a list.")
+                    actual_room_list = parsed_value
+            except json.JSONDecodeError:
+                _LOGGER.debug(f"Switch: Could not parse string value for key {top_level_key} as JSON list.")
 
         if not actual_room_list:
-            _LOGGER.debug(f"No list of rooms found under key '{top_level_key}' or key itself is not a room list.")
-            # If top_level_value was a string and parsed into a list, handle that too.
-            if isinstance(top_level_value, str):
-                try:
-                    import json
-                    parsed_value = json.loads(top_level_value)
-                    if isinstance(parsed_value, list):
-                        _LOGGER.debug(f"Successfully parsed string value for key {top_level_key} into a list.")
-                        actual_room_list = parsed_value
-                    else:
-                        _LOGGER.debug(f"Parsed string for key {top_level_key} is not a list: {type(parsed_value)}")
-                except json.JSONDecodeError:
-                    _LOGGER.debug(f"Could not parse string value for key {top_level_key} as JSON list.")
+            #_LOGGER.debug(f"Switch: No list of rooms found under key '{top_level_key}' or key itself is not a room list.")
+            continue
 
-            if not actual_room_list: # Check again if parsing populated it
-                 # Before skipping, check if this top_level_value might be a single room dict directly
-                if isinstance(top_level_value, dict) and top_level_value.get("@attributes",{}).get("type","").startswith("room"):
-                    _LOGGER.debug(f"Treating top_level_key '{top_level_key}' value as a single room dictionary.")
-                    actual_room_list = [top_level_value] # Treat as a list with one room
-                else:
-                    continue # Not a list of rooms, and not a single room dict, skip this top-level item
-
-        for room_data_dict in actual_room_list:
+        for room_data_dict in actual_room_list: # room_data_dict is one whole room
             if not isinstance(room_data_dict, dict):
-                _LOGGER.warning(f"Item in room list for key '{top_level_key}' is not a dictionary: {room_data_dict}")
+                _LOGGER.warning(f"Switch: Item in room list for key '{top_level_key}' is not a dictionary: {room_data_dict}")
                 continue
 
             room_attributes = room_data_dict.get("@attributes", {})
-            room_context_id = room_attributes.get("var", room_attributes.get("label", f"unknown_room_{top_level_key}"))
-            _LOGGER.debug(f"Processing room: {room_context_id}, Data: {room_data_dict}")
+            if not room_attributes.get("var"): # Ensure room has a usable ID
+                _LOGGER.warning(f"Switch: Room missing '@attributes.var': {room_attributes}. Skipping.")
+                continue
 
-            # Look for switches in various known sections within a room
-            # Common sections that might contain 'entry' with 'unit': 'ONOFFAUTO'
-            # are 'param', 'pump', 'piseq', 'mixer', 'drink', 'radiator', 'main' (for room main controls)
+            #_LOGGER.debug(f"Switch: Processing room: {room_attributes.get('var')}, Label: {room_attributes.get('label')}")
 
-            possible_switch_containers = [
+            possible_switch_containers_keys = [
                 "param", "pump", "piseq", "mixer", "drink", "radiator", "main"
-                # Add other potential container keys if discovered
             ]
 
-            for container_key in possible_switch_containers:
+            for container_key in possible_switch_containers_keys:
+                # component_data is the content of 'param', or 'pump' etc.
+                # This can be a dictionary OR a list of dictionaries (e.g. multiple 'pump' items)
                 component_data = room_data_dict.get(container_key)
                 if component_data:
                     _extract_switches_from_room_component(
-                        component_data, coordinator, entry, room_context_id, entities
+                        component_data, # e.g., the dict/list for 'param' or 'pump'
+                        coordinator,
+                        entry,
+                        room_attributes, # Attributes of the parent room
+                        entities
                     )
-
-            # Special handling for 'display' as it can also have 'entry' like structures,
-            # though less common for direct control switches.
-            # Example from user data does not show switches in 'display', but being thorough.
-            # display_data = room_data_dict.get("display")
-            # if display_data:
-            # _extract_switches_from_room_component(
-            # display_data, coordinator, entry, room_context_id, entities
-            # )
-
 
     if not entities:
         _LOGGER.info("No ONOFFAUTO switch entities found in Innotemp configuration.")
@@ -197,24 +195,49 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
         self,
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        room_id: str,
-        param_id: str,
-        param_data: dict,
+        room_attributes: dict,       # Attributes of the parent room
+        component_attributes: dict,  # Attributes of the component block (e.g. 'param', 'pump' item)
+        param_id: str,               # 'var' of the switch entry itself
+        param_data: dict,            # The switch entry's own data dict
     ) -> None:
         """Initialize the switch."""
+        self._room_attributes = room_attributes
+        self._component_attributes = component_attributes
+        self._param_id = param_id # This is the 'var' of the switch itself, used for coordinator.data.get()
+        self._param_data = param_data # Contains label, unit for the switch
+
+        # For InnotempCoordinatorEntity, entity_config needs 'param' for unique_id and 'label' for name
+        # The 'param' for unique_id should be the switch's own param_id (its 'var')
+        # The 'label' should be the switch's own label, stripped of HTML.
+        original_label = self._param_data.get("label", f"Switch {self._param_id}")
+        cleaned_label = _strip_html(original_label)
         entity_config = {
-            "param": param_id,
-            "label": param_data.get("label", f"Innotemp Switch {param_id}"),
-            "room_id": room_id,
-            # Add any other relevant parts of param_data if needed by base class
+            "param": self._param_id,
+            "label": cleaned_label if cleaned_label else f"Switch {self._param_id}" # Fallback if stripping results in empty
         }
+        # The room_id for API calls might be from room_attributes['var'] or a more specific ID
+        # For now, let's assume the main room_id from room_attributes['var'] is used for commands.
+        # This might need adjustment if commands are more granular.
+        self._api_room_id = room_attributes.get("var")
+
+
         super().__init__(coordinator, config_entry, entity_config)
-        self._room_id = room_id
-        self._param_id = param_id
-        self._attr_unique_id = (
-            f"{config_entry.unique_id}_{self._room_id}_{self._param_id}"
-        )
-        self._attr_name = entity_config["label"]
+        # _attr_name and _attr_unique_id are set by super().__init__ using entity_config
+
+        # Store for API calls if needed, ensure this is the correct room identifier for commands.
+        # self._room_id was previously room_context_id, now derived from room_attributes.get("var")
+        # It's used by async_turn_on/off
+        # We need to ensure this is the correct ID for the API call.
+        # The `param_id` used in `super().__init__` is for the entity's unique HA ID.
+        # The `param_id` for API calls is `self._param_id`.
+        # The `room_id` for API calls is `self._api_room_id`.
+
+        # Old unique_id: f"{config_entry.unique_id}_{self._room_id}_{self._param_id}"
+        # The self._room_id in InnotempCoordinatorEntity is set from entity_config["room_id"] if present.
+        # Let's ensure our unique ID is truly unique.
+        # The base InnotempCoordinatorEntity uses entity_config["param"] for its part of unique_id.
+        # So, self.unique_id will be f"{config_entry.unique_id}_{self._param_id}"
+        # This should be fine as self._param_id (switch's 'var') is expected to be unique across the controller.
 
         # Get initial state from the coordinator's data
         self._update_state_from_coordinator()
