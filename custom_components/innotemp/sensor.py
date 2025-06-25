@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json # For parsing string values in config_data if necessary
+import re # For stripping HTML
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -16,6 +17,12 @@ from .coordinator import (
 )  # Assuming InnotempCoordinatorEntity is in coordinator.py
 
 _LOGGER = logging.getLogger(__name__)
+
+def _strip_html(text: str | None) -> str:
+    """Remove HTML tags from a string."""
+    if text is None:
+        return ""
+    return re.sub(r'<[^>]+>', '', text).strip()
 
 
 async def async_setup_entry(
@@ -267,12 +274,21 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
         self,
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        param_id: str, # This is the 'var' from the config
-        param_data: dict, # This is the dict containing 'var', 'unit', 'label'
+        room_attributes: dict,      # Attributes of the parent room
+        component_attributes: dict, # Attributes of the component block (e.g. 'display')
+        sensor_data: dict,          # The sensor's own data dict {'var':..., 'unit':..., 'label':...}
     ) -> None:
         """Initialize the sensor."""
+        self._room_attributes = room_attributes
+        self._component_attributes = component_attributes
+        self._param_data = sensor_data # Renaming for clarity, was param_data
+
+        param_id = self._param_data.get("var")
+        original_label = self._param_data.get("label", f"Sensor {param_id}")
+        cleaned_label = _strip_html(original_label)
+
         # entity_config for InnotempCoordinatorEntity expects 'param' for unique_id part
-        entity_config = {"param": param_id, "label": param_data.get("label", f"Innotemp Sensor {param_id}")}
+        entity_config = {"param": param_id, "label": cleaned_label if cleaned_label else f"Sensor {param_id}"}
         super().__init__(coordinator, config_entry, entity_config)
 
         # _attr_name is already set by InnotempCoordinatorEntity using entity_config['label']

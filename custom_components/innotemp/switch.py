@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re # For stripping HTML
 
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
@@ -13,6 +14,12 @@ from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+def _strip_html(text: str | None) -> str:
+    """Remove HTML tags from a string."""
+    if text is None:
+        return ""
+    return re.sub(r'<[^>]+>', '', text).strip()
 
 
 async def async_setup_entry(
@@ -201,10 +208,12 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
 
         # For InnotempCoordinatorEntity, entity_config needs 'param' for unique_id and 'label' for name
         # The 'param' for unique_id should be the switch's own param_id (its 'var')
-        # The 'label' should be the switch's own label.
+        # The 'label' should be the switch's own label, stripped of HTML.
+        original_label = self._param_data.get("label", f"Switch {self._param_id}")
+        cleaned_label = _strip_html(original_label)
         entity_config = {
             "param": self._param_id,
-            "label": self._param_data.get("label", f"Switch {self._param_id}")
+            "label": cleaned_label if cleaned_label else f"Switch {self._param_id}" # Fallback if stripping results in empty
         }
         # The room_id for API calls might be from room_attributes['var'] or a more specific ID
         # For now, let's assume the main room_id from room_attributes['var'] is used for commands.
