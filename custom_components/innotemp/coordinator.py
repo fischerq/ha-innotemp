@@ -92,7 +92,12 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
 
                 if component_stable_id_part: # Ensure we have something to make it unique
                     device_identifiers = {(DOMAIN, self._config_entry.entry_id, room_var, component_stable_id_part)}
-                    device_name = comp_label or f"{room_label} - {component_stable_id_part}"
+
+                    # Construct hierarchical name: "Room Label > Component Label"
+                    # Fallback for component label if it's empty
+                    effective_comp_label = comp_label if comp_label else component_stable_id_part
+                    device_name = f"{room_label} > {effective_comp_label}"
+
                     device_model = comp_type or "Component"
 
                     return {
