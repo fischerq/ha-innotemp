@@ -11,7 +11,7 @@ from .api import InnotempApiClient
 from .coordinator import InnotempDataUpdateCoordinator
 from .const import DOMAIN
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.INPUT_SELECT, Platform.NUMBER]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT, Platform.NUMBER]
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.setLevel(logging.WARNING)  # Changed logger level to warning
