@@ -6,7 +6,7 @@ import logging
 import re  # For stripping HTML
 import json  # For parsing string values in config_data if necessary (in async_setup_entry)
 
-from homeassistant.components.input_select import InputSelectEntity
+from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -210,7 +210,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class InnotempInputSelect(InnotempCoordinatorEntity, InputSelectEntity):
+class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
     """Representation of an Innotemp InputSelect entity for ONOFFAUTO controls."""
 
     def __init__(
