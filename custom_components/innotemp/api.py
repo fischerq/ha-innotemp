@@ -74,7 +74,16 @@ class InnotempApiClient:
                 _LOGGER.debug("Response body from %s: %s", url, response_text)
 
                 try:
-                    return json.loads(response_text)
+                    json_response = json.loads(response_text)
+                    # Check for application-level auth errors even with HTTP 200 OK
+                    if isinstance(json_response, dict) and \
+                       json_response.get("info") == "error" and \
+                       json_response.get("error") == "Access denied.":
+                        _LOGGER.warning(
+                            "Access denied by API for %s (payload error), attempting re-login.", endpoint
+                        )
+                        raise InnotempAuthError(f"Access denied by API payload for {endpoint}: {json_response}")
+                    return json_response
                 except json.JSONDecodeError:
                     _LOGGER.warning(
                         "Response from %s was not valid JSON: %s",
@@ -170,8 +179,16 @@ class InnotempApiClient:
             "room_id": str(room_id),
             "param": param,
             "val_new": str(val_new),
-            "val_prev": str(val_prev),
+            # "val_prev": str(val_prev), # Will be added conditionally
         }
+        if val_prev is not None:
+            command_data["val_prev"] = str(val_prev)
+        else:
+            # If val_prev is None, we omit it.
+            # Alternatively, the API might expect an empty string or a specific sentinel.
+            # Omitting is often safer if the API treats missing params as "don't care" or "use default".
+            _LOGGER.debug(f"val_prev is None for param {param}, omitting from command.")
+
         result = await self._execute_with_retry(
             "POST", "value.save.php", data=command_data
         )
