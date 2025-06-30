@@ -570,9 +570,13 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
             )
             return None
 
-    @property
-    def device_class(self):
-        """Return the device class of the sensor."""
-        # Define device class based on param_data if available, e.g., temperature, humidity
-        # For now, returning None, adjust as needed
-        return None
+    # Ensure InnotempEnumSensor uses its _attr_device_class = SensorDeviceClass.ENUM
+    # by NOT overriding the device_class property here. If this property method exists
+    # and returns something else (or None), it will take precedence over _attr_device_class.
+    #
+    # @property
+    # def device_class(self):
+    #     """Return the device class of the sensor."""
+    #     # This was incorrectly returning None, overriding _attr_device_class.
+    #     # For Enum sensors, we rely on _attr_device_class = SensorDeviceClass.ENUM.
+    #     return SensorDeviceClass.ENUM # Or better, remove this property from InnotempEnumSensor
