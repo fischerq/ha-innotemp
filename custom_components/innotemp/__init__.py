@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import InnotempApiClient
-from .coordinator import InnotempDataUpdateCoordinator
+from .coordinator import InnotempDataUpdateCoordinator, extract_initial_states
 from .const import DOMAIN
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT, Platform.NUMBER]
@@ -91,7 +91,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = InnotempDataUpdateCoordinator(hass, _LOGGER, api_client)
 
+    # Extract initial states from the detailed config_data and set it on the coordinator
+    if config_data:
+        _LOGGER.debug("Processing config_data to extract initial states for coordinator.")
+        initial_states = extract_initial_states(config_data)
+        if initial_states:
+            _LOGGER.debug(f"Setting {len(initial_states)} initial states on coordinator.")
+            coordinator.async_set_updated_data(initial_states)
+        else:
+            _LOGGER.debug("No initial states extracted from config_data.")
+    else:
+        _LOGGER.warning("config_data is None, cannot set initial states on coordinator.")
+
+
     # Pass the coordinator's async_set_updated_data as the callback for SSE
+    # This should be set up regardless of initial data, to catch ongoing updates.
     coordinator.sse_task = hass.async_create_task(
         api_client.async_sse_connect(coordinator.async_set_updated_data)
     )
@@ -99,11 +113,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
         "coordinator": coordinator,
-        "config": config_data,  # Store config data for entity creation
+        "config": config_data,  # Still store original config_data for entity discovery if needed
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # This call might now be partially redundant if initial_states were set,
+    # but it's standard practice and handles coordinator lifecycle.
+    # If _async_update_data is a no-op (as it is for SSE), this won't fetch again.
     await coordinator.async_config_entry_first_refresh()
 
     return True
