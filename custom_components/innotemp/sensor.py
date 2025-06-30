@@ -9,6 +9,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorDeviceClass,
     SensorStateClass,
+    SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -21,6 +22,16 @@ from .coordinator import (
 )  # Assuming InnotempCoordinatorEntity is in coordinator.py
 
 _LOGGER = logging.getLogger(__name__)
+
+# Mapping from API values to human-readable options and vice-versa for ENUM sensors
+# Mirrors the one in select.py
+API_VALUE_TO_OPTION = {
+    0: "Off",
+    1: "On",
+    2: "Auto",
+}
+OPTION_TO_API_VALUE = {v: k for k, v in API_VALUE_TO_OPTION.items()}
+OPTIONS_LIST = list(API_VALUE_TO_OPTION.values())
 
 
 def _strip_html(text: str | None) -> str:
@@ -127,33 +138,48 @@ def _extract_sensors_from_room_component(
                     )
                     continue
 
-                if (
-                    "var" in sensor_candidate_data
-                    and "unit" in sensor_candidate_data
-                    and sensor_candidate_data.get("unit") != "ONOFFAUTO"
-                ):
+                if "var" in sensor_candidate_data and "unit" in sensor_candidate_data:
                     param_id = sensor_candidate_data.get("var")
-                    # Fallback for label if not present in sensor_candidate_data, though unlikely
-                    label = sensor_candidate_data.get("label", f"Sensor {param_id}")
+                    label = sensor_candidate_data.get(
+                        "label", f"Sensor {param_id}"
+                    )  # Default label
                     unit = sensor_candidate_data.get("unit")
 
-                    if not param_id or not unit or not label:  # Basic check
+                    if not param_id or not unit:  # Label can be defaulted
                         _LOGGER.debug(
-                            f"Sensor: Skipping input_item (missing var, unit, or label): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}"
+                            f"Sensor: Skipping input_item (missing var or unit): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}"
                         )
                         continue
 
-                    _LOGGER.debug(
-                        f"Sensor: Found potential sensor (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
-                    )
-                    entities_list.append(
-                        InnotempSensor(
-                            coordinator,
-                            entry,
-                            room_attributes,
-                            current_component_attributes,  # Attributes of the block containing this sensor (e.g. 'display' block)
-                            sensor_candidate_data,  # The sensor's own data dict {'var': ..., 'unit': ..., 'label': ...}
+                    if unit == "ONOFFAUTO":
+                        _LOGGER.debug(
+                            f"Sensor: Found ONOFFAUTO (creating EnumSensor) (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
                         )
+                        entities_list.append(
+                            InnotempEnumSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                sensor_candidate_data,
+                            )
+                        )
+                    else:  # Regular sensor
+                        _LOGGER.debug(
+                            f"Sensor: Found potential regular sensor (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
+                        )
+                        entities_list.append(
+                            InnotempSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                sensor_candidate_data,
+                            )
+                        )
+                else:
+                    _LOGGER.debug(
+                        f"Sensor: Skipping input_item (missing var or unit details): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}"
                     )
 
         # Also check 'output' lists/dicts, as they might contain readable sensor values
@@ -174,32 +200,46 @@ def _extract_sensors_from_room_component(
                     )
                     continue
 
-                if (
-                    "var" in sensor_candidate_data
-                    and "unit" in sensor_candidate_data
-                    and sensor_candidate_data.get("unit") != "ONOFFAUTO"
-                ):
+                if "var" in sensor_candidate_data and "unit" in sensor_candidate_data:
                     param_id = sensor_candidate_data.get("var")
                     label = sensor_candidate_data.get("label", f"Sensor {param_id}")
                     unit = sensor_candidate_data.get("unit")
 
-                    if not param_id or not unit or not label:
+                    if not param_id or not unit:
                         _LOGGER.debug(
-                            f"Sensor: Skipping output_item (missing var, unit or label): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}"
+                            f"Sensor: Skipping output_item (missing var or unit): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}"
                         )
                         continue
 
-                    _LOGGER.debug(
-                        f"Sensor: Found potential sensor (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
-                    )
-                    entities_list.append(
-                        InnotempSensor(
-                            coordinator,
-                            entry,
-                            room_attributes,
-                            current_component_attributes,  # Attributes of the block containing this sensor
-                            sensor_candidate_data,  # The sensor's own data dict
+                    if unit == "ONOFFAUTO":
+                        _LOGGER.debug(
+                            f"Sensor: Found ONOFFAUTO (creating EnumSensor) (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
                         )
+                        entities_list.append(
+                            InnotempEnumSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                sensor_candidate_data,
+                            )
+                        )
+                    else: # Regular sensor
+                        _LOGGER.debug(
+                            f"Sensor: Found potential regular sensor (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
+                        )
+                        entities_list.append(
+                            InnotempSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                sensor_candidate_data,
+                            )
+                        )
+                else:
+                    _LOGGER.debug(
+                        f"Sensor: Skipping output_item (missing var or unit details): {sensor_candidate_data} in room {room_attributes.get('var')}, component {current_component_attributes}"
                     )
 
         # Fallback: If the component_item_data itself (e.g. a direct item in 'mixer' list not having 'input'/'output' sub-keys)
@@ -209,35 +249,47 @@ def _extract_sensors_from_room_component(
         # to avoid double-adding if a sensor is defined both directly and in an input list.
         # However, typical structure is component_item_data -> input/output -> sensor_candidate_data.
         # A direct sensor at component_item_data level would mean component_item_data IS sensor_candidate_data.
-        if (
-            not input_list and not output_data
-        ):  # Only if no 'input' or 'output' sub-keys were processed
-            if (
-                "var" in component_item_data
-                and "unit" in component_item_data
-                and component_item_data.get("unit") != "ONOFFAUTO"
-            ):
+        if not input_list and not output_data:  # Only if no 'input' or 'output' sub-keys were processed
+            if "var" in component_item_data and "unit" in component_item_data:
                 param_id = component_item_data.get("var")
                 label = component_item_data.get("label", f"Sensor {param_id}")
                 unit = component_item_data.get("unit")
 
-                if not param_id or not unit or not label:
+                if not param_id or not unit:
                     _LOGGER.debug(
-                        f"Sensor: Skipping component_item_data (missing var, unit or label): {component_item_data} in room {room_attributes.get('var')}"
+                        f"Sensor: Skipping component_item_data (missing var or unit): {component_item_data} in room {room_attributes.get('var')}"
                     )
                 else:
-                    _LOGGER.debug(
-                        f"Sensor: Found potential sensor (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
-                    )
-                    entities_list.append(
-                        InnotempSensor(
-                            coordinator,
-                            entry,
-                            room_attributes,
-                            current_component_attributes,  # In this case, component_item_data's attributes are the component's attributes
-                            component_item_data,  # And component_item_data is also the sensor's data
+                    if unit == "ONOFFAUTO":
+                        _LOGGER.debug(
+                            f"Sensor: Found ONOFFAUTO (creating EnumSensor) (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
                         )
-                    )
+                        entities_list.append(
+                            InnotempEnumSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                component_item_data,
+                            )
+                        )
+                    else: # Regular sensor
+                        _LOGGER.debug(
+                            f"Sensor: Found potential regular sensor (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
+                        )
+                        entities_list.append(
+                            InnotempSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                component_item_data,
+                            )
+                        )
+            else:
+                _LOGGER.debug(
+                    f"Sensor: Skipping component_item_data (missing var or unit details): {component_item_data} in room {room_attributes.get('var')}"
+                )
 
 
 async def async_setup_entry(
@@ -450,6 +502,73 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
         # Define state class based on param_data if available, e.g., Measurement, Total
         # For now, returning None, adjust as needed
         return None
+
+
+class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
+    """Representation of an Innotemp ENUM Sensor for ONOFFAUTO states."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = OPTIONS_LIST
+
+    def __init__(
+        self,
+        coordinator: InnotempDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+        room_attributes: dict,
+        component_attributes: dict, # Attributes of the component block (e.g. 'display', 'param')
+        sensor_data: dict,      # The sensor's own data dict {'var':..., 'unit':..., 'label':...}
+    ) -> None:
+        """Initialize the ENUM sensor."""
+        self._room_attributes = room_attributes
+        self._component_attributes = component_attributes
+        self._param_data = sensor_data
+        self._param_id = self._param_data.get("var")
+
+        original_label = self._param_data.get("label", f"Status {self._param_id}")
+        cleaned_label = _strip_html(original_label)
+
+        # Modify label/param for unique ID within InnotempCoordinatorEntity
+        # Append '_status' to the param_id for the superclass to create a unique entity ID
+        # The label should also reflect it's a status/enum sensor
+        entity_config = {
+            "param": f"{self._param_id}_status", # Ensures unique_id is different from the select entity
+            "label": f"{cleaned_label} Status",
+        }
+        super().__init__(coordinator, config_entry, entity_config)
+
+        _LOGGER.debug(
+            f"InnotempEnumSensor initialized: name='{self.name}', unique_id='{self.unique_id}', options='{self.options}', param_id='{self._param_id}'"
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current string state of the sensor."""
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                f"InnotempEnumSensor.native_value: Coordinator data is None for entity {self.entity_id} (param_id: {self._param_id})."
+            )
+            return None
+
+        api_value = self.coordinator.data.get(self._param_id)
+        if api_value is None:
+            _LOGGER.debug(
+                f"InnotempEnumSensor.native_value: Param_id {self._param_id} not found in coordinator data for entity {self.entity_id}."
+            )
+            return None
+
+        try:
+            # Ensure api_value is treated as an integer for dictionary lookup
+            selected_option = API_VALUE_TO_OPTION.get(int(api_value))
+            if selected_option is None:
+                _LOGGER.warning(
+                    f"InnotempEnumSensor.native_value: Unknown API value '{api_value}' for param_id {self._param_id} on entity {self.entity_id}. Not in {API_VALUE_TO_OPTION}"
+                )
+            return selected_option
+        except (ValueError, TypeError):
+            _LOGGER.warning(
+                f"InnotempEnumSensor.native_value: Could not convert API value '{api_value}' to int for param_id {self._param_id} on entity {self.entity_id}."
+            )
+            return None
 
     @property
     def device_class(self):
