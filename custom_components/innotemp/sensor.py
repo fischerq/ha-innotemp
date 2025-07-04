@@ -57,19 +57,36 @@ def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, 
     name_to_value = {}
     options = []
 
+import html # For unescaping HTML entities
+
     # Regex to capture Name(Value)
     # It expects the name part to not contain '(' or ')'
-    # Value part can be alphanumeric, '.', '-'
+    # Value part can be alphanumeric, '.', '-', or 'eq' followed by alphanumeric/'-'
     pattern = re.compile(r"([^()]+)\(([^()]+)\)")
 
     for part in parts:
         match = pattern.fullmatch(part)
         if match:
-            name, value_str = match.groups()
-            # Normalize value: API might send "0" or "0.0", but config might have "0.0(0)" or "0.0(0.0)"
-            # For now, assume values in parentheses are the exact strings to match from API.
-            value_to_name[value_str] = name
-            name_to_value[name] = value_str
+            name_raw, value_in_config = match.groups()
+
+            # Decode HTML entities in the name
+            name = html.unescape(name_raw)
+
+            # Determine the key for the map (actual value from API)
+            api_value_key = value_in_config
+            if value_in_config.startswith("eq"):
+                potential_numeric_part = value_in_config[2:]
+                # Check if the part after "eq" is a valid integer (positive, negative, or zero)
+                # or a float-like string that the API might send.
+                # For simplicity, we'll assume if it starts with 'eq', the API sends the numeric part.
+                # A more robust check could involve trying to parse potential_numeric_part as float/int.
+                # For now, simply stripping 'eq' if it's there and the rest is not empty.
+                if potential_numeric_part: # Ensure there's something after 'eq'
+                    api_value_key = potential_numeric_part
+                # else: keep value_in_config as is, though this case (e.g. "Name(eq)") seems unlikely
+
+            value_to_name[api_value_key] = name
+            name_to_value[name] = api_value_key # Store the key used for API value lookup
             options.append(name)
         else:
             _LOGGER.warning(f"Could not parse VAR: enum part: '{part}' from string '{unit_string}'")
