@@ -184,10 +184,10 @@ class InnotempApiClient:
         if val_prev is not None:
             command_data["val_prev"] = str(val_prev)
         else:
-            # If val_prev is None, we omit it.
-            # Alternatively, the API might expect an empty string or a specific sentinel.
-            # Omitting is often safer if the API treats missing params as "don't care" or "use default".
-            _LOGGER.debug(f"val_prev is None for param {param}, omitting from command.")
+            command_data["val_prev"] = ""  # Send empty string if None
+            _LOGGER.debug(f"val_prev was None for param {param}, sending empty string for val_prev.")
+
+        _LOGGER.debug(f"Sending command to value.save.php with payload: {command_data}")
 
         result = await self._execute_with_retry(
             "POST", "value.save.php", data=command_data
@@ -198,7 +198,7 @@ class InnotempApiClient:
             )
             return True
         _LOGGER.error(
-            f"Failed to send command for room {room_id}: {param} -> {val_new}. Response: {result}"
+            f"Failed to send command for room {room_id}: {param} -> {val_new}. Payload sent: {command_data}. Response: {result}"
         )
         return False
 
