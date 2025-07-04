@@ -41,6 +41,47 @@ def _strip_html(text: str | None) -> str:
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
+def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, str], list[str]] | None:
+    """
+    Parses a 'VAR:'-style enum string.
+    Example: "VAR:AUTO(2):0%(0):25%(0.25):50%(0.5):75%(0.75):100%(1):"
+    Returns: (value_to_name_map, name_to_value_map, options_list) or None if parsing fails.
+    Values from the string are kept as strings, as API might return them as such.
+    """
+    if not unit_string or not unit_string.startswith("VAR:") or not unit_string.endswith(":"):
+        return None
+
+    parts = unit_string[4:-1].split(':')  # Remove "VAR:" and trailing ":" and split
+
+    value_to_name = {}
+    name_to_value = {}
+    options = []
+
+    # Regex to capture Name(Value)
+    # It expects the name part to not contain '(' or ')'
+    # Value part can be alphanumeric, '.', '-'
+    pattern = re.compile(r"([^()]+)\(([^()]+)\)")
+
+    for part in parts:
+        match = pattern.fullmatch(part)
+        if match:
+            name, value_str = match.groups()
+            # Normalize value: API might send "0" or "0.0", but config might have "0.0(0)" or "0.0(0.0)"
+            # For now, assume values in parentheses are the exact strings to match from API.
+            value_to_name[value_str] = name
+            name_to_value[name] = value_str
+            options.append(name)
+        else:
+            _LOGGER.warning(f"Could not parse VAR: enum part: '{part}' from string '{unit_string}'")
+            # Depending on strictness, could return None here or just skip the malformed part.
+            # For now, skip. If all parts fail, empty dicts/list will be returned.
+
+    if not options: # If no valid parts were parsed
+        return None
+
+    return value_to_name, name_to_value, options
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -164,6 +205,36 @@ def _extract_sensors_from_room_component(
                                 sensor_candidate_data,
                             )
                         )
+                    # Check for VAR: style enums
+                    elif unit.startswith("VAR:") and unit.endswith(":"):
+                        parsed_enum_data = _parse_var_enum_string(unit)
+                        if parsed_enum_data:
+                            value_map, _, options_list = parsed_enum_data
+                            _LOGGER.debug(
+                                f"Sensor: Found VAR: ENUM (creating DynamicEnumSensor) (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
+                            )
+                            entities_list.append(
+                                InnotempDynamicEnumSensor(
+                                    coordinator,
+                                    entry,
+                                    room_attributes,
+                                    current_component_attributes,
+                                    sensor_candidate_data,
+                                    value_map,
+                                    options_list,
+                                )
+                            )
+                        else: # Parsing failed, treat as regular sensor with the weird unit
+                            _LOGGER.warning(f"Failed to parse VAR: unit string '{unit}' for {param_id}. Treating as regular sensor.")
+                            entities_list.append(
+                                InnotempSensor(
+                                    coordinator,
+                                    entry,
+                                    room_attributes,
+                                    current_component_attributes,
+                                    sensor_candidate_data, # sensor_data (contains unit)
+                                )
+                            )
                     else:  # Regular sensor
                         _LOGGER.debug(
                             f"Sensor: Found potential regular sensor (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
@@ -224,6 +295,36 @@ def _extract_sensors_from_room_component(
                                 sensor_candidate_data,
                             )
                         )
+                    # Check for VAR: style enums
+                    elif unit.startswith("VAR:") and unit.endswith(":"):
+                        parsed_enum_data = _parse_var_enum_string(unit)
+                        if parsed_enum_data:
+                            value_map, _, options_list = parsed_enum_data
+                            _LOGGER.debug(
+                                f"Sensor: Found VAR: ENUM (creating DynamicEnumSensor) (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
+                            )
+                            entities_list.append(
+                                InnotempDynamicEnumSensor(
+                                    coordinator,
+                                    entry,
+                                    room_attributes,
+                                    current_component_attributes,
+                                    sensor_candidate_data,
+                                    value_map,
+                                    options_list,
+                                )
+                            )
+                        else: # Parsing failed, treat as regular sensor
+                            _LOGGER.warning(f"Failed to parse VAR: unit string '{unit}' for {param_id} from output. Treating as regular sensor.")
+                            entities_list.append(
+                                InnotempSensor(
+                                    coordinator,
+                                    entry,
+                                    room_attributes,
+                                    current_component_attributes,
+                                    sensor_candidate_data,
+                                )
+                            )
                     else: # Regular sensor
                         _LOGGER.debug(
                             f"Sensor: Found potential regular sensor (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
@@ -273,6 +374,36 @@ def _extract_sensors_from_room_component(
                                 component_item_data,
                             )
                         )
+                    # Check for VAR: style enums
+                    elif unit.startswith("VAR:") and unit.endswith(":"):
+                        parsed_enum_data = _parse_var_enum_string(unit)
+                        if parsed_enum_data:
+                            value_map, _, options_list = parsed_enum_data
+                            _LOGGER.debug(
+                                f"Sensor: Found VAR: ENUM (creating DynamicEnumSensor) (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
+                            )
+                            entities_list.append(
+                                InnotempDynamicEnumSensor(
+                                    coordinator,
+                                    entry,
+                                    room_attributes,
+                                    current_component_attributes,
+                                    component_item_data,
+                                    value_map,
+                                    options_list,
+                                )
+                            )
+                        else: # Parsing failed, treat as regular sensor
+                            _LOGGER.warning(f"Failed to parse VAR: unit string '{unit}' for {param_id} from direct component. Treating as regular sensor.")
+                            entities_list.append(
+                                InnotempSensor(
+                                    coordinator,
+                                    entry,
+                                    room_attributes,
+                                    current_component_attributes,
+                                    component_item_data,
+                                )
+                            )
                     else: # Regular sensor
                         _LOGGER.debug(
                             f"Sensor: Found potential regular sensor (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
@@ -580,3 +711,79 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
     #     # This was incorrectly returning None, overriding _attr_device_class.
     #     # For Enum sensors, we rely on _attr_device_class = SensorDeviceClass.ENUM.
     #     return SensorDeviceClass.ENUM # Or better, remove this property from InnotempEnumSensor
+
+
+class InnotempDynamicEnumSensor(InnotempCoordinatorEntity, SensorEntity):
+    """Representation of an Innotemp Sensor with dynamically parsed ENUM options."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+
+    def __init__(
+        self,
+        coordinator: InnotempDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+        room_attributes: dict,
+        component_attributes: dict,
+        sensor_data: dict,
+        value_to_name_map: dict[str, str],
+        options: list[str],
+    ) -> None:
+        """Initialize the dynamic ENUM sensor."""
+        self._room_attributes = room_attributes
+        self._component_attributes = component_attributes
+        self._param_data = sensor_data
+        self._param_id = self._param_data.get("var")
+
+        self._value_to_name_map = value_to_name_map
+        self._attr_options = options
+
+        original_label = self._param_data.get("label", f"Setting {self._param_id}")
+        cleaned_label = _strip_html(original_label)
+
+        # Append '_setting' or similar to param_id for unique entity ID if it might clash
+        # with other entities (e.g. a select entity if this is also controllable)
+        # For now, assume it's a read-only sensor state.
+        entity_config = {
+            "param": f"{self._param_id}_dynenum", # Ensure unique_id
+            "label": cleaned_label, # Label it clearly
+        }
+        super().__init__(coordinator, config_entry, entity_config)
+
+        # No native_unit_of_measurement for ENUM type sensors.
+        self._attr_native_unit_of_measurement = None
+
+        _LOGGER.debug(
+            f"InnotempDynamicEnumSensor initialized: name='{self.name}', unique_id='{self.unique_id}', "
+            f"options='{self.options}', param_id='{self._param_id}', map='{self._value_to_name_map}'"
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current string state of the sensor."""
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                f"InnotempDynamicEnumSensor.native_value: Coordinator data is None for entity {self.entity_id} (param_id: {self._param_id})."
+            )
+            return None
+
+        api_value = self.coordinator.data.get(self._param_id)
+        if api_value is None:
+            _LOGGER.debug(
+                f"InnotempDynamicEnumSensor.native_value: Param_id {self._param_id} not found in coordinator data for entity {self.entity_id}."
+            )
+            return None
+
+        # API value can be number or string. Ensure we use string for map lookup.
+        api_value_str = str(api_value)
+
+        selected_option = self._value_to_name_map.get(api_value_str)
+
+        if selected_option is None:
+            _LOGGER.warning(
+                f"InnotempDynamicEnumSensor.native_value: Unknown API value '{api_value_str}' for param_id {self._param_id} on entity {self.entity_id}. Not in map {self._value_to_name_map}"
+            )
+            # Fallback to raw value or a special string like "Unknown"
+            # For now, return None or the raw string to indicate an issue.
+            return None # Or api_value_str if preferred to show the raw unmapped value
+
+        return selected_option
