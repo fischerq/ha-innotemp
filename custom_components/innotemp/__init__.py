@@ -93,16 +93,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Extract initial states from the detailed config_data and set it on the coordinator
     if config_data:
-        _LOGGER.debug("Processing config_data to extract initial states for coordinator.")
+        _LOGGER.debug(
+            "Processing config_data to extract initial states for coordinator."
+        )
         initial_states = extract_initial_states(config_data)
         if initial_states:
-            _LOGGER.debug(f"Setting {len(initial_states)} initial states on coordinator.")
+            _LOGGER.debug(
+                f"Setting {len(initial_states)} initial states on coordinator."
+            )
             coordinator.async_set_updated_data(initial_states)
         else:
             _LOGGER.debug("No initial states extracted from config_data.")
     else:
-        _LOGGER.warning("config_data is None, cannot set initial states on coordinator.")
-
+        _LOGGER.warning(
+            "config_data is None, cannot set initial states on coordinator."
+        )
 
     # Pass the coordinator's async_set_updated_data as the callback for SSE
     # This should be set up regardless of initial data, to catch ongoing updates.

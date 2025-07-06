@@ -76,13 +76,18 @@ class InnotempApiClient:
                 try:
                     json_response = json.loads(response_text)
                     # Check for application-level auth errors even with HTTP 200 OK
-                    if isinstance(json_response, dict) and \
-                       json_response.get("info") == "error" and \
-                       json_response.get("error") == "Access denied.":
+                    if (
+                        isinstance(json_response, dict)
+                        and json_response.get("info") == "error"
+                        and json_response.get("error") == "Access denied."
+                    ):
                         _LOGGER.warning(
-                            "Access denied by API for %s (payload error), attempting re-login.", endpoint
+                            "Access denied by API for %s (payload error), attempting re-login.",
+                            endpoint,
                         )
-                        raise InnotempAuthError(f"Access denied by API payload for {endpoint}: {json_response}")
+                        raise InnotempAuthError(
+                            f"Access denied by API payload for {endpoint}: {json_response}"
+                        )
                     return json_response
                 except json.JSONDecodeError:
                     _LOGGER.warning(
@@ -185,7 +190,9 @@ class InnotempApiClient:
             command_data["val_prev"] = str(val_prev)
         else:
             command_data["val_prev"] = ""  # Send empty string if None
-            _LOGGER.debug(f"val_prev was None for param {param}, sending empty string for val_prev.")
+            _LOGGER.debug(
+                f"val_prev was None for param {param}, sending empty string for val_prev."
+            )
 
         _LOGGER.debug(f"Sending command to value.save.php with payload: {command_data}")
 

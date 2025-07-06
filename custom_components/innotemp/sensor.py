@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import html
 import json  # For parsing string values in config_data if necessary
 import re  # For stripping HTML
 from homeassistant.components.sensor import (
@@ -38,12 +39,13 @@ def _strip_html(text: str | None) -> str:
     """Remove HTML tags from a string."""
     if text is None:
         return ""
-import html # For unescaping HTML entities
 
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
-def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, str], list[str]] | None:
+def _parse_var_enum_string(
+    unit_string: str,
+) -> tuple[dict[str, str], dict[str, str], list[str]] | None:
     """
     Parses a 'VAR:'-style enum string.
     Example: "VAR:AUTO(2):0%(0):25%(0.25):50%(0.5):75%(0.75):100%(1):"
@@ -52,13 +54,21 @@ def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, 
     Keys in value_to_name_map will be strings like "0", "1", "0.25" corresponding to API values.
     Names (values in value_to_name_map and items in options_list) will have HTML entities decoded.
     """
-    if not unit_string or not unit_string.startswith("VAR:") or not unit_string.endswith(":"):
+    if (
+        not unit_string
+        or not unit_string.startswith("VAR:")
+        or not unit_string.endswith(":")
+    ):
         _LOGGER.debug(f"Invalid VAR: enum string format (prefix/suffix): {unit_string}")
         return None
 
-    parts = unit_string[4:-1].split(':')
-    if not parts or all(not p for p in parts): # Check if parts list is empty or contains only empty strings
-        _LOGGER.debug(f"No valid parts found in VAR: enum string after split: {unit_string}")
+    parts = unit_string[4:-1].split(":")
+    if not parts or all(
+        not p for p in parts
+    ):  # Check if parts list is empty or contains only empty strings
+        _LOGGER.debug(
+            f"No valid parts found in VAR: enum string after split: {unit_string}"
+        )
         return None
 
     value_to_name = {}
@@ -71,24 +81,28 @@ def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, 
     pattern = re.compile(r"([^()]+)\(([^()]+)\)")
 
     for part in parts:
-        if not part.strip(): # Skip empty parts that might result from "::"
+        if not part.strip():  # Skip empty parts that might result from "::"
             continue
         match = pattern.fullmatch(part)
         if match:
             name_raw, value_from_config_str = match.groups()
 
-            name = html.unescape(name_raw) # Decode HTML entities from the name part
+            name = html.unescape(name_raw)  # Decode HTML entities from the name part
 
             # Determine the actual API value key for the map.
             # This key will be a string, to match stringified API response values.
-            api_value_key_for_map = value_from_config_str # Default (e.g., "0.25", "some_string_value")
+            api_value_key_for_map = (
+                value_from_config_str  # Default (e.g., "0.25", "some_string_value")
+            )
 
             if value_from_config_str.startswith("eq"):
                 # Examples: "eq0", "eq-1", "eq32"
                 # The part after "eq" is what the API is expected to send.
                 numeric_part_after_eq = value_from_config_str[2:]
                 # Ensure there's actually a numeric part, not just "eq"
-                if numeric_part_after_eq or numeric_part_after_eq == "0": # "0" is a valid numeric part
+                if (
+                    numeric_part_after_eq or numeric_part_after_eq == "0"
+                ):  # "0" is a valid numeric part
                     api_value_key_for_map = numeric_part_after_eq
                 # else: if value_from_config_str was just "eq", it's malformed for this rule.
                 # Keep original value_from_config_str ("eq") as key in that unlikely case.
@@ -97,20 +111,14 @@ def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, 
             name_to_value[name] = api_value_key_for_map
             options.append(name)
         else:
-            _LOGGER.warning(f"Could not parse VAR: enum part: '{part}' from string '{unit_string}' using regex.")
+            _LOGGER.warning(
+                f"Could not parse VAR: enum part: '{part}' from string '{unit_string}' using regex."
+            )
 
-    if not options: # If no valid parts were successfully parsed
-        _LOGGER.warning(f"No options were extracted from VAR: enum string: {unit_string}")
-        return None
-
-    return value_to_name, name_to_value, options
-
-
-async def async_setup_entry(
-            # Depending on strictness, could return None here or just skip the malformed part.
-            # For now, skip. If all parts fail, empty dicts/list will be returned.
-
-    if not options: # If no valid parts were parsed
+    if not options:  # If no valid parts were successfully parsed
+        _LOGGER.warning(
+            f"No options were extracted from VAR: enum string: {unit_string}"
+        )
         return None
 
     return value_to_name, name_to_value, options
@@ -258,15 +266,17 @@ def _extract_sensors_from_room_component(
                                     options_list,
                                 )
                             )
-                        else: # Parsing failed, treat as regular sensor with the weird unit
-                            _LOGGER.warning(f"Failed to parse VAR: unit string '{unit}' for {param_id}. Treating as regular sensor.")
+                        else:  # Parsing failed, treat as regular sensor with the weird unit
+                            _LOGGER.warning(
+                                f"Failed to parse VAR: unit string '{unit}' for {param_id}. Treating as regular sensor."
+                            )
                             entities_list.append(
                                 InnotempSensor(
                                     coordinator,
                                     entry,
                                     room_attributes,
                                     current_component_attributes,
-                                    sensor_candidate_data, # sensor_data (contains unit)
+                                    sensor_candidate_data,  # sensor_data (contains unit)
                                 )
                             )
                     else:  # Regular sensor
@@ -348,8 +358,10 @@ def _extract_sensors_from_room_component(
                                     options_list,
                                 )
                             )
-                        else: # Parsing failed, treat as regular sensor
-                            _LOGGER.warning(f"Failed to parse VAR: unit string '{unit}' for {param_id} from output. Treating as regular sensor.")
+                        else:  # Parsing failed, treat as regular sensor
+                            _LOGGER.warning(
+                                f"Failed to parse VAR: unit string '{unit}' for {param_id} from output. Treating as regular sensor."
+                            )
                             entities_list.append(
                                 InnotempSensor(
                                     coordinator,
@@ -359,7 +371,7 @@ def _extract_sensors_from_room_component(
                                     sensor_candidate_data,
                                 )
                             )
-                    else: # Regular sensor
+                    else:  # Regular sensor
                         _LOGGER.debug(
                             f"Sensor: Found potential regular sensor (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
                         )
@@ -384,7 +396,9 @@ def _extract_sensors_from_room_component(
         # to avoid double-adding if a sensor is defined both directly and in an input list.
         # However, typical structure is component_item_data -> input/output -> sensor_candidate_data.
         # A direct sensor at component_item_data level would mean component_item_data IS sensor_candidate_data.
-        if not input_list and not output_data:  # Only if no 'input' or 'output' sub-keys were processed
+        if (
+            not input_list and not output_data
+        ):  # Only if no 'input' or 'output' sub-keys were processed
             if "var" in component_item_data and "unit" in component_item_data:
                 param_id = component_item_data.get("var")
                 label = component_item_data.get("label", f"Sensor {param_id}")
@@ -427,8 +441,10 @@ def _extract_sensors_from_room_component(
                                     options_list,
                                 )
                             )
-                        else: # Parsing failed, treat as regular sensor
-                            _LOGGER.warning(f"Failed to parse VAR: unit string '{unit}' for {param_id} from direct component. Treating as regular sensor.")
+                        else:  # Parsing failed, treat as regular sensor
+                            _LOGGER.warning(
+                                f"Failed to parse VAR: unit string '{unit}' for {param_id} from direct component. Treating as regular sensor."
+                            )
                             entities_list.append(
                                 InnotempSensor(
                                     coordinator,
@@ -438,7 +454,7 @@ def _extract_sensors_from_room_component(
                                     component_item_data,
                                 )
                             )
-                    else: # Regular sensor
+                    else:  # Regular sensor
                         _LOGGER.debug(
                             f"Sensor: Found potential regular sensor (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
                         )
@@ -680,8 +696,8 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
         room_attributes: dict,
-        component_attributes: dict, # Attributes of the component block (e.g. 'display', 'param')
-        sensor_data: dict,      # The sensor's own data dict {'var':..., 'unit':..., 'label':...}
+        component_attributes: dict,  # Attributes of the component block (e.g. 'display', 'param')
+        sensor_data: dict,  # The sensor's own data dict {'var':..., 'unit':..., 'label':...}
     ) -> None:
         """Initialize the ENUM sensor."""
         self._room_attributes = room_attributes
@@ -696,7 +712,7 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
         # Append '_status' to the param_id for the superclass to create a unique entity ID
         # The label should also reflect it's a status/enum sensor
         entity_config = {
-            "param": f"{self._param_id}_status", # Ensures unique_id is different from the select entity
+            "param": f"{self._param_id}_status",  # Ensures unique_id is different from the select entity
             "label": f"{cleaned_label} Status",
         }
         super().__init__(coordinator, config_entry, entity_config)
@@ -778,8 +794,8 @@ class InnotempDynamicEnumSensor(InnotempCoordinatorEntity, SensorEntity):
         # with other entities (e.g. a select entity if this is also controllable)
         # For now, assume it's a read-only sensor state.
         entity_config = {
-            "param": f"{self._param_id}_dynenum", # Ensure unique_id
-            "label": cleaned_label, # Label it clearly
+            "param": f"{self._param_id}_dynenum",  # Ensure unique_id
+            "label": cleaned_label,  # Label it clearly
         }
         super().__init__(coordinator, config_entry, entity_config)
 
@@ -818,6 +834,6 @@ class InnotempDynamicEnumSensor(InnotempCoordinatorEntity, SensorEntity):
             )
             # Fallback to raw value or a special string like "Unknown"
             # For now, return None or the raw string to indicate an issue.
-            return None # Or api_value_str if preferred to show the raw unmapped value
+            return None  # Or api_value_str if preferred to show the raw unmapped value
 
         return selected_option
