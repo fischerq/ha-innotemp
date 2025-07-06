@@ -38,6 +38,8 @@ def _strip_html(text: str | None) -> str:
     """Remove HTML tags from a string."""
     if text is None:
         return ""
+import html # For unescaping HTML entities
+
     return re.sub(r"<[^>]+>", "", text).strip()
 
 
@@ -45,34 +47,66 @@ def _parse_var_enum_string(unit_string: str) -> tuple[dict[str, str], dict[str, 
     """
     Parses a 'VAR:'-style enum string.
     Example: "VAR:AUTO(2):0%(0):25%(0.25):50%(0.5):75%(0.75):100%(1):"
+    or "VAR:AN(eq0):AUS(eq1):"
     Returns: (value_to_name_map, name_to_value_map, options_list) or None if parsing fails.
-    Values from the string are kept as strings, as API might return them as such.
+    Keys in value_to_name_map will be strings like "0", "1", "0.25" corresponding to API values.
+    Names (values in value_to_name_map and items in options_list) will have HTML entities decoded.
     """
     if not unit_string or not unit_string.startswith("VAR:") or not unit_string.endswith(":"):
+        _LOGGER.debug(f"Invalid VAR: enum string format (prefix/suffix): {unit_string}")
         return None
 
-    parts = unit_string[4:-1].split(':')  # Remove "VAR:" and trailing ":" and split
+    parts = unit_string[4:-1].split(':')
+    if not parts or all(not p for p in parts): # Check if parts list is empty or contains only empty strings
+        _LOGGER.debug(f"No valid parts found in VAR: enum string after split: {unit_string}")
+        return None
 
     value_to_name = {}
     name_to_value = {}
     options = []
 
-    # Regex to capture Name(Value)
-    # It expects the name part to not contain '(' or ')'
-    # Value part can be alphanumeric, '.', '-'
+    # Regex to capture Name(ValueInConfig)
+    # Name: one or more characters, not '(' or ')'
+    # ValueInConfig: one or more characters, not '(' or ')'
     pattern = re.compile(r"([^()]+)\(([^()]+)\)")
 
     for part in parts:
+        if not part.strip(): # Skip empty parts that might result from "::"
+            continue
         match = pattern.fullmatch(part)
         if match:
-            name, value_str = match.groups()
-            # Normalize value: API might send "0" or "0.0", but config might have "0.0(0)" or "0.0(0.0)"
-            # For now, assume values in parentheses are the exact strings to match from API.
-            value_to_name[value_str] = name
-            name_to_value[name] = value_str
+            name_raw, value_from_config_str = match.groups()
+
+            name = html.unescape(name_raw) # Decode HTML entities from the name part
+
+            # Determine the actual API value key for the map.
+            # This key will be a string, to match stringified API response values.
+            api_value_key_for_map = value_from_config_str # Default (e.g., "0.25", "some_string_value")
+
+            if value_from_config_str.startswith("eq"):
+                # Examples: "eq0", "eq-1", "eq32"
+                # The part after "eq" is what the API is expected to send.
+                numeric_part_after_eq = value_from_config_str[2:]
+                # Ensure there's actually a numeric part, not just "eq"
+                if numeric_part_after_eq or numeric_part_after_eq == "0": # "0" is a valid numeric part
+                    api_value_key_for_map = numeric_part_after_eq
+                # else: if value_from_config_str was just "eq", it's malformed for this rule.
+                # Keep original value_from_config_str ("eq") as key in that unlikely case.
+
+            value_to_name[api_value_key_for_map] = name
+            name_to_value[name] = api_value_key_for_map
             options.append(name)
         else:
-            _LOGGER.warning(f"Could not parse VAR: enum part: '{part}' from string '{unit_string}'")
+            _LOGGER.warning(f"Could not parse VAR: enum part: '{part}' from string '{unit_string}' using regex.")
+
+    if not options: # If no valid parts were successfully parsed
+        _LOGGER.warning(f"No options were extracted from VAR: enum string: {unit_string}")
+        return None
+
+    return value_to_name, name_to_value, options
+
+
+async def async_setup_entry(
             # Depending on strictness, could return None here or just skip the malformed part.
             # For now, skip. If all parts fail, empty dicts/list will be returned.
 
