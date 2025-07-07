@@ -239,6 +239,32 @@ def _extract_sensors_from_room_component(
                                 sensor_candidate_data,
                             )
                         )
+                    elif unit == "ONOFF": # Handle specific "ONOFF" units
+                        _LOGGER.debug(
+                            f"Sensor: Found ONOFF unit (creating OnOffSensor) (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
+                        )
+                        entities_list.append(
+                            InnotempOnOffSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                sensor_candidate_data,
+                            )
+                        )
+                    elif unit == "ONOFF": # Handle specific "ONOFF" units
+                        _LOGGER.debug(
+                            f"Sensor: Found ONOFF unit (creating OnOffSensor) (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
+                        )
+                        entities_list.append(
+                            InnotempOnOffSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                sensor_candidate_data,
+                            )
+                        )
                     # Check for VAR: style enums
                     elif unit.startswith("VAR:") and unit.endswith(":"):
                         parsed_enum_data = _parse_var_enum_string(unit)
@@ -401,6 +427,19 @@ def _extract_sensors_from_room_component(
                         )
                         entities_list.append(
                             InnotempEnumSensor(
+                                coordinator,
+                                entry,
+                                room_attributes,
+                                current_component_attributes,
+                                component_item_data,
+                            )
+                        )
+                    elif unit == "ONOFF": # Handle specific "ONOFF" units
+                        _LOGGER.debug(
+                            f"Sensor: Found ONOFF unit (creating OnOffSensor) (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
+                        )
+                        entities_list.append(
+                            InnotempOnOffSensor(
                                 coordinator,
                                 entry,
                                 room_attributes,
@@ -745,6 +784,82 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
     #     # This was incorrectly returning None, overriding _attr_device_class.
     #     # For Enum sensors, we rely on _attr_device_class = SensorDeviceClass.ENUM.
     #     return SensorDeviceClass.ENUM # Or better, remove this property from InnotempEnumSensor
+
+
+class InnotempOnOffSensor(InnotempCoordinatorEntity, SensorEntity):
+    """Representation of an Innotemp Sensor for ONOFF states."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    # Define the human-readable options
+    _attr_options = ["Off", "On"]
+
+    # Static map for ONOFF states.
+    # Handles common string representations of 0/1, 0.0/1.0 from the API/coordinator.
+    API_VALUE_TO_ONOFF_OPTION = {
+        "0": "Off",
+        "0.0": "Off",
+        "1": "On",
+        "1.0": "On",
+    }
+
+    def __init__(
+        self,
+        coordinator: InnotempDataUpdateCoordinator,
+        config_entry: ConfigEntry,
+        room_attributes: dict,
+        component_attributes: dict,
+        sensor_data: dict,
+    ) -> None:
+        """Initialize the ONOFF sensor."""
+        self._room_attributes = room_attributes
+        self._component_attributes = component_attributes
+        self._param_data = sensor_data
+        self._param_id = self._param_data.get("var")
+
+        original_label = self._param_data.get("label", f"State {self._param_id}")
+        cleaned_label = _strip_html(original_label)
+
+        entity_config = {
+            "param": f"{self._param_id}_onoff_status", # Ensures unique_id
+            "label": cleaned_label,
+        }
+        super().__init__(coordinator, config_entry, entity_config)
+
+        self._attr_native_unit_of_measurement = None # ENUMs don't have a unit
+
+        _LOGGER.debug(
+            f"InnotempOnOffSensor initialized: name='{self.name}', unique_id='{self.unique_id}', "
+            f"options='{self.options}', param_id='{self._param_id}'"
+        )
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the current string state of the sensor (On/Off)."""
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                f"InnotempOnOffSensor.native_value: Coordinator data is None for entity {self.entity_id} (param_id: {self._param_id})."
+            )
+            return None
+
+        api_value = self.coordinator.data.get(self._param_id)
+        if api_value is None:
+            _LOGGER.debug(
+                f"InnotempOnOffSensor.native_value: Param_id {self._param_id} not found in coordinator data for entity {self.entity_id}."
+            )
+            return None
+
+        # Convert API value to string to handle various numeric types (int, float, string)
+        api_value_str = str(api_value)
+
+        selected_option = self.API_VALUE_TO_ONOFF_OPTION.get(api_value_str)
+
+        if selected_option is None:
+            _LOGGER.warning(
+                f"InnotempOnOffSensor.native_value: Unknown API value '{api_value_str}' for ONOFF sensor param_id {self._param_id} on entity {self.entity_id}. Not in {self.API_VALUE_TO_ONOFF_OPTION}"
+            )
+            return None # Or some other default like "Unknown"
+
+        return selected_option
 
 
 class InnotempDynamicEnumSensor(InnotempCoordinatorEntity, SensorEntity):
