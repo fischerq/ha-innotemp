@@ -193,10 +193,30 @@ async def async_setup_entry(
                 "main",
             ]
 
-            numeric_room_id_for_api = room_data_dict.get("room_id")
-            if numeric_room_id_for_api is None:
+            room_type_str = room_attributes.get("type") # e.g., "room003"
+            numeric_room_id_for_api = None
+            if room_type_str:
+                match = re.search(r"room(\d+)", room_type_str)
+                if match:
+                    try:
+                        numeric_room_id_for_api = int(match.group(1))
+                    except ValueError:
+                        _LOGGER.warning(
+                            f"InputSelect: Could not parse numeric ID from room type '{room_type_str}' for room var '{room_attributes.get('var')}'. Skipping."
+                        )
+                else:
+                    _LOGGER.warning(
+                        f"InputSelect: Could not find numeric pattern in room type '{room_type_str}' for room var '{room_attributes.get('var')}'. Skipping."
+                    )
+            else:
                 _LOGGER.warning(
-                    f"InputSelect: Room '{room_attributes.get('var')}' does not have a numeric 'room_id' field in its main data object: {room_data_dict}. Skipping select entities for this room."
+                    f"InputSelect: Room type missing in attributes for room var '{room_attributes.get('var')}'. Attributes: {room_attributes}. Skipping."
+                )
+
+            if numeric_room_id_for_api is None:
+                # This log now means parsing failed or type was missing, not that 'room_id' field was absent
+                _LOGGER.warning(
+                    f"InputSelect: Failed to determine numeric room ID for room var '{room_attributes.get('var')}' from its attributes. Skipping select entities for this room."
                 )
                 continue
 
