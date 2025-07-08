@@ -701,20 +701,35 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
             )
             return None
 
-        # Attempt to convert to float if possible, for units like °C, %, kW
-        # Handle known string constants like "ONOFF", "AUTO" etc. if they are non-numeric sensors
-        # For now, basic float conversion for common numeric units
-        unit = str(self.native_unit_of_measurement).lower()
-        if unit in ["°c", "c", "%", "k.w", "kw", "s"]:  # Add other numeric units
+        # Handle 'nan' specifically for numeric sensors before attempting float conversion
+        value_str = str(value)
+        is_numeric_sensor_type = self.device_class in [
+            SensorDeviceClass.TEMPERATURE,
+            SensorDeviceClass.HUMIDITY,
+            SensorDeviceClass.POWER,
+            SensorDeviceClass.DURATION,
+            # Add other numeric device classes if relevant
+        ] or str(self.native_unit_of_measurement).lower() in ["°c", "c", "%", "k.w", "kw", "s"]
+
+        if is_numeric_sensor_type and value_str.lower() == "nan":
+            _LOGGER.debug(
+                f"InnotempSensor.native_value: Received 'nan' for numeric sensor {self.entity_id} (param_id: {self._param_id}). Returning None."
+            )
+            return None
+
+        # Attempt to convert to float if it's a known numeric type
+        if is_numeric_sensor_type:
             try:
-                return float(value)
+                return float(value_str)
             except (ValueError, TypeError):
                 _LOGGER.warning(
-                    f"Could not convert sensor value '{value}' to float for {self.entity_id} (param_id: {self._param_id}, unit: {unit}). Returning as is."
+                    f"Could not convert sensor value '{value_str}' to float for {self.entity_id} (param_id: {self._param_id}, unit: {self.native_unit_of_measurement}). Returning as is (if non-numeric type) or None (if conversion was expected)."
                 )
-                return value  # Return original string if conversion fails
+                # If it was expected to be numeric but couldn't convert (and wasn't 'nan'),
+                # returning None might be safer than returning a string that HA might misinterpret.
+                return None
 
-        return value  # Return raw value if no specific conversion logic
+        return value_str  # Return raw string value if no specific conversion logic or not numeric
 
     @property
     def state_class(self):
