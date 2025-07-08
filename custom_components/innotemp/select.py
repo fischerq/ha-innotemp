@@ -38,7 +38,8 @@ def _extract_input_selects_from_room_component(
     component_data,  # This is the data for a specific component like 'param', 'pump'
     coordinator,
     entry,
-    room_attributes,  # Attributes of the parent room
+    room_attributes,  # Attributes of the parent room (contains 'var': string_room_id)
+    numeric_room_id: int, # The actual numeric room ID to be used for API calls
     entities_list,
 ):
     """
@@ -107,13 +108,14 @@ def _extract_input_selects_from_room_component(
                         coordinator,
                         entry,
                         room_attributes,
+                        numeric_room_id, # Pass the numeric room ID
                         component_attributes,
                         param_id,
                         actual_entry,
                     )
                 )
                 _LOGGER.debug(
-                    f"InputSelect: Found ONOFFAUTO (potential input_select): room_var {room_attributes.get('var')}, component_var {component_attributes.get('var')}, item_var {param_id}, data {actual_entry}"
+                    f"InputSelect: Found ONOFFAUTO (potential input_select): room_var {room_attributes.get('var')} (numeric: {numeric_room_id}), component_var {component_attributes.get('var')}, item_var {param_id}, data {actual_entry}"
                 )
 
 
@@ -191,11 +193,18 @@ async def async_setup_entry(
                 "main",
             ]
 
+            numeric_room_id_for_api = room_data_dict.get("room_id")
+            if numeric_room_id_for_api is None:
+                _LOGGER.warning(
+                    f"InputSelect: Room '{room_attributes.get('var')}' does not have a numeric 'room_id' field in its main data object: {room_data_dict}. Skipping select entities for this room."
+                )
+                continue
+
             for container_key in possible_containers_keys:
                 component_data = room_data_dict.get(container_key)
                 if component_data:
                     _extract_input_selects_from_room_component(
-                        component_data, coordinator, entry, room_attributes, entities
+                        component_data, coordinator, entry, room_attributes, numeric_room_id_for_api, entities
                     )
 
     if not entities:
@@ -217,32 +226,35 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
         self,
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
-        room_attributes: dict,
+        room_attributes: dict, # Contains string 'var' for room identification
+        numeric_api_room_id: int, # Actual numeric ID for API calls
         component_attributes: dict,
         param_id: str,  # 'var' of the ONOFFAUTO entry
         param_data: dict,  # The ONOFFAUTO entry's own data dict
     ):
         """Initialize the Innotemp InputSelect entity."""
-        self._room_attributes = room_attributes
+        self._room_attributes = room_attributes # Keep for context if needed elsewhere
         self._component_attributes = component_attributes
-        self._param_id = param_id  # 'var' of the ONOFFAUTO entry
-        self._param_data = param_data  # The ONOFFAUTO entry dict itself
+        self._param_id = param_id
+        self._param_data = param_data
+
+        # Store the correct numeric room ID for API calls
+        self._numeric_api_room_id = numeric_api_room_id
 
         original_label = self._param_data.get("label", f"Control {self._param_id}")
         cleaned_label = _strip_html(original_label)
 
         entity_config = {
-            "param": self._param_id,
+            "param": self._param_id, # Used for unique_id part by parent
             "label": cleaned_label if cleaned_label else f"Control {self._param_id}",
         }
         super().__init__(coordinator, config_entry, entity_config)
 
-        self._api_room_id = room_attributes.get("var")  # For API calls
         self._attr_options = OPTIONS_LIST  # ["Off", "On", "Auto"]
 
         _LOGGER.debug(
             f"InnotempInputSelect initialized: name='{self.name}', unique_id='{self.unique_id}', "
-            f"param_id='{self._param_id}', room_id='{self._api_room_id}'"
+            f"param_id='{self._param_id}', numeric_api_room_id='{self._numeric_api_room_id}' (was string: {room_attributes.get('var')})"
         )
 
     @property
@@ -311,16 +323,16 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
             # For now, we'll pass what we have (which might be None).
 
         _LOGGER.debug(
-            f"Sending command for {self.entity_id}: room {self._api_room_id}, param {self._param_id}, "
+            f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
             f"new_val {new_api_value} (from option '{option}'), prev_val {previous_api_value}"
         )
 
         try:
             success = await self.coordinator.api_client.async_send_command(
-                room_id=self._api_room_id,
+                room_id=self._numeric_api_room_id, # Use the stored numeric room ID
                 param=self._param_id,
                 val_new=new_api_value,
-                val_prev=previous_api_value,  # API client needs to handle if this is None
+                val_prev=previous_api_value,
             )
             if success:
                 _LOGGER.info(
