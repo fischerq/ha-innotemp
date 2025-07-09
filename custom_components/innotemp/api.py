@@ -183,9 +183,10 @@ class InnotempApiClient:
         }
         if val_prev is not None:
             command_data["val_prev"] = str(val_prev)
+            _LOGGER.debug(f"val_prev for param {param} is '{val_prev}', including in payload.")
         else:
-            command_data["val_prev"] = ""  # Send empty string if None
-            _LOGGER.debug(f"val_prev was None for param {param}, sending empty string for val_prev.")
+            # If val_prev is None, omit it from the command_data entirely.
+            _LOGGER.debug(f"val_prev was None for param {param}, omitting 'val_prev' from payload.")
 
         _LOGGER.debug(f"Sending command to value.save.php with payload: {command_data}")
 
