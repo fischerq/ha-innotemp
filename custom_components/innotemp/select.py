@@ -8,8 +8,10 @@ import json  # For parsing string values in config_data if necessary (in async_s
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+# For accessing entity registry:
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
@@ -328,19 +330,48 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
             previous_api_value = self.coordinator.data.get(self._param_id)
 
         if previous_api_value is None:
+            _LOGGER.debug(
+                f"Primary source (coordinator.data) for val_prev is None for {self.entity_id} (param {self._param_id}). Trying corresponding sensor."
+            )
+            # Construct the unique_id of the InnotempEnumSensor (handles ONOFFAUTO)
+            # Its entity_config['param'] is f"{self._param_id}_status"
+            sensor_unique_id_param_suffix = "_status" # For ONOFFAUTO entities handled by InnotempEnumSensor
+            # The full unique_id is entry_id + "_" + entity_config_param
+            # self.platform.config_entry.entry_id should give the config entry ID
+            target_sensor_unique_id = f"{self.platform.config_entry.entry_id}_{self._param_id}{sensor_unique_id_param_suffix}"
+
+            ent_reg = er.async_get(self.hass)
+            sensor_entity_id = ent_reg.async_get_entity_id("sensor", DOMAIN, target_sensor_unique_id)
+
+            if sensor_entity_id:
+                sensor_hass_state = self.hass.states.get(sensor_entity_id)
+                if sensor_hass_state and sensor_hass_state.state not in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+                    human_readable_state = sensor_hass_state.state
+                    api_val_from_sensor = OPTION_TO_API_VALUE.get(human_readable_state)
+                    if api_val_from_sensor is not None:
+                        previous_api_value = api_val_from_sensor
+                        _LOGGER.debug(
+                            f"Successfully determined val_prev='{previous_api_value}' from sensor {sensor_entity_id} (state='{human_readable_state}') for {self.entity_id}."
+                        )
+                    else:
+                        _LOGGER.warning(
+                            f"Could not map sensor state '{human_readable_state}' back to API value for {self.entity_id} using {OPTION_TO_API_VALUE}."
+                        )
+                else:
+                    _LOGGER.debug(
+                        f"Corresponding sensor {sensor_entity_id} for {self.entity_id} has no valid state: {sensor_hass_state.state if sensor_hass_state else 'None'}"
+                    )
+            else:
+                _LOGGER.debug(
+                    f"No corresponding sensor found in entity registry with unique_id '{target_sensor_unique_id}' for {self.entity_id}."
+                )
+
+        # If still None, log the original warning
+        if previous_api_value is None:
             _LOGGER.warning(
                 f"Cannot determine previous value for {self.entity_id} (param {self._param_id}) when setting to '{option}'. "
                 "API command might be incomplete or use a default previous value if supported by API."
-                # Consider if we should prevent the command or send a conventional 'unknown' previous value
             )
-            # For safety, one might choose to not send the command if prev value is critical and unknown.
-            # However, many APIs might accept a command without a perfect previous value.
-            # For now, we'll proceed, but this is a point of potential improvement/config.
-            # Setting previous_api_value to the new_api_value if unknown might be a safe bet for some APIs
-            # to indicate no change if it was already in that state, or just send what we have.
-            # Let's assume the API can handle it or that data will refresh shortly.
-            # A common pattern is to use the current state if known, or a sentinel if not.
-            # For now, we'll pass what we have (which might be None).
 
         _LOGGER.debug(
             f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
