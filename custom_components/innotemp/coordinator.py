@@ -99,7 +99,9 @@ class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
             name="Innotemp",
         )
         self.api_client = api_client
-        self.sse_task = hass.async_create_task(api_client.async_sse_connect(self.async_set_updated_data))
+        self.sse_task = hass.async_create_task(
+            api_client.async_sse_connect(self.async_set_updated_data)
+        )
 
     async def _async_update_data(self):
         """Fetch data from API endpoint.

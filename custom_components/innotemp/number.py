@@ -73,7 +73,9 @@ def _extract_numbers_from_room_component(
 
             unit = actual_entry.get("unit")
             param_id = actual_entry.get("var")
-            access = actual_entry.get("access", "user")  # Default to user access if not specified
+            access = actual_entry.get(
+                "access", "user"
+            )  # Default to user access if not specified
 
             # Condition for a settable number: has 'var', 'unit' is not ONOFFAUTO, and unit suggests numeric.
             # And typically 'access' is 'user' or 'admin'.

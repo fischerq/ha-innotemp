@@ -247,7 +247,7 @@ def _extract_sensors_from_room_component(
                                 sensor_candidate_data,
                             )
                         )
-                    elif unit == "ONOFF": # Handle specific "ONOFF" units
+                    elif unit == "ONOFF":  # Handle specific "ONOFF" units
                         _LOGGER.debug(
                             f"Sensor: Found ONOFF unit (creating OnOffSensor) (from input list of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
                         )
@@ -260,7 +260,7 @@ def _extract_sensors_from_room_component(
                                 sensor_candidate_data,
                             )
                         )
-                    elif unit == "ONOFF": # Handle specific "ONOFF" units
+                    elif unit == "ONOFF":  # Handle specific "ONOFF" units
                         _LOGGER.debug(
                             f"Sensor: Found ONOFF unit (creating OnOffSensor) (from output of {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {sensor_candidate_data}"
                         )
@@ -448,7 +448,7 @@ def _extract_sensors_from_room_component(
                                 component_item_data,
                             )
                         )
-                    elif unit == "ONOFF": # Handle specific "ONOFF" units
+                    elif unit == "ONOFF":  # Handle specific "ONOFF" units
                         _LOGGER.debug(
                             f"Sensor: Found ONOFF unit (creating OnOffSensor) (direct component item {component_key_hint} '{current_component_attributes.get('label')}'): room_var {room_attributes.get('var')}, sensor_var {param_id}, data {component_item_data}"
                         )
@@ -709,7 +709,14 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
             SensorDeviceClass.POWER,
             SensorDeviceClass.DURATION,
             # Add other numeric device classes if relevant
-        ] or str(self.native_unit_of_measurement).lower() in ["°c", "c", "%", "k.w", "kw", "s"]
+        ] or str(self.native_unit_of_measurement).lower() in [
+            "°c",
+            "c",
+            "%",
+            "k.w",
+            "kw",
+            "s",
+        ]
 
         if is_numeric_sensor_type and value_str.lower() == "nan":
             _LOGGER.debug(
@@ -851,12 +858,12 @@ class InnotempOnOffSensor(InnotempCoordinatorEntity, SensorEntity):
         cleaned_label = _strip_html(original_label)
 
         entity_config = {
-            "param": f"{self._param_id}_onoff_status", # Ensures unique_id
+            "param": f"{self._param_id}_onoff_status",  # Ensures unique_id
             "label": cleaned_label,
         }
         super().__init__(coordinator, config_entry, entity_config)
 
-        self._attr_native_unit_of_measurement = None # ENUMs don't have a unit
+        self._attr_native_unit_of_measurement = None  # ENUMs don't have a unit
 
         _LOGGER.debug(
             f"InnotempOnOffSensor initialized: name='{self.name}', unique_id='{self.unique_id}', "
@@ -888,7 +895,7 @@ class InnotempOnOffSensor(InnotempCoordinatorEntity, SensorEntity):
             _LOGGER.warning(
                 f"InnotempOnOffSensor.native_value: Unknown API value '{api_value_str}' for ONOFF sensor param_id {self._param_id} on entity {self.entity_id}. Not in {self.API_VALUE_TO_ONOFF_OPTION}"
             )
-            return None # Or some other default like "Unknown"
+            return None  # Or some other default like "Unknown"
 
         return selected_option
 

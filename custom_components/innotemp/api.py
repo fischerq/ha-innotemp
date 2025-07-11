@@ -12,11 +12,13 @@ _LOGGER.setLevel(logging.WARNING)  # Changed logger level to debug
 # Custom exceptions for better error handling
 class InnotempApiError(Exception):
     """Generic Innotemp API error."""
+
     pass
 
 
 class InnotempAuthError(InnotempApiError):
     """Innotemp API authentication error."""
+
     pass
 
 
@@ -213,12 +215,12 @@ class InnotempApiClient:
             _LOGGER.error(
                 f"Authentication error sending command for room {room_id}: {param} -> {val_new}. Payload: {command_data}. Error: {e}"
             )
-            raise # Re-raise to allow select.py or other callers to handle
-        except InnotempApiError as e: # Catch other API errors from _execute_with_retry
+            raise  # Re-raise to allow select.py or other callers to handle
+        except InnotempApiError as e:  # Catch other API errors from _execute_with_retry
             _LOGGER.error(
                 f"API error sending command for room {room_id}: {param} -> {val_new}. Payload: {command_data}. Error: {e}"
             )
-            raise # Re-raise
+            raise  # Re-raise
 
     async def _get_signal_names(self) -> list[str]:
         """Fetch the list of signal names for the SSE stream."""
