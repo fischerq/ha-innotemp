@@ -36,6 +36,7 @@ class InnotempApiClient:
         self._base_url = f"http://{host}/inc"
         self._sse_task: Optional[asyncio.Task] = None
         self._is_logged_in = False
+        self._signal_names_cache: Optional[list[str]] = None
 
     async def _api_request(
         self,
@@ -223,16 +224,28 @@ class InnotempApiClient:
             raise  # Re-raise
 
     async def _get_signal_names(self) -> list[str]:
-        """Fetch the list of signal names for the SSE stream."""
+        """Fetch the list of signal names for the SSE stream. Uses a cache after the first successful fetch."""
+        if self._signal_names_cache is not None:
+            _LOGGER.debug("Returning cached signal names: %s", self._signal_names_cache)
+            return self._signal_names_cache
+
         init_data = {"init": "1", "un": self._username, "pw": self._password}
         response = await self._execute_with_retry(
             "POST", "live_signal.read.php", data=init_data
         )
         if response and isinstance(response, list):
+            if not response:  # Validation 1: Empty list check
+                _LOGGER.error("Fetched signal names list is empty.")
+                raise InnotempApiError("Failed to fetch signal names: list is empty.")
+
             _LOGGER.debug(f"Fetched {len(response)} signal names for SSE: %s", response)
+            self._signal_names_cache = response  # Cache the fetched names
             return response
-        _LOGGER.error("Failed to fetch signal names or response is not a list.")
-        raise InnotempApiError("Could not fetch signal names.")
+
+        _LOGGER.error("Failed to fetch signal names or response is not a list. Response: %s", response)
+        # Clear cache on error to ensure retry on next attempt if applicable
+        self._signal_names_cache = None
+        raise InnotempApiError("Could not fetch signal names or response was not a list.")
 
     async def async_sse_connect(
         self, callback: Callable[[Dict[str, Any]], Awaitable[None]]
@@ -269,6 +282,50 @@ class InnotempApiClient:
                                 data_list = json.loads(data_str)
                                 if isinstance(data_list, list):
                                     _LOGGER.debug("Received SSE data: %s", data_list)
+
+                                    # Validation 2: Check for length mismatch
+                                    if len(data_list) != len(signal_names):
+                                        _LOGGER.error(
+                                            "SSE data length mismatch: expected %s values for signals %s, but got %s values: %s",
+                                            len(signal_names),
+                                            signal_names,
+                                            len(data_list),
+                                            data_list,
+                                        )
+                                        # Clear signal names cache to force re-fetch on next connection attempt,
+                                        # as the signal list might have changed.
+                                        self._signal_names_cache = None
+                                        _LOGGER.warning("Cleared signal names cache due to SSE data length mismatch. Will attempt to re-fetch on next cycle.")
+                                        # Depending on strictness, we might raise an error or break the loop here.
+                                        # For now, log, clear cache, and continue to next message or retry cycle.
+                                        # If we `continue` here, it means we skip this specific data packet.
+                                        # If the error is persistent, the listener will eventually retry the connection.
+                                        # Re-raising an error here would make the sse_listener exit and retry sooner.
+                                        # Let's make it try to re-fetch signals by breaking the inner loop and letting the outer loop restart.
+                                        # This requires _get_signal_names to be called again.
+                                        # However, the current structure calls _get_signal_names outside the 'async for line' loop.
+                                        # So, to force a re-fetch of signal_names, we should probably reconnect.
+                                        # The simplest for now is to log and skip this packet.
+                                        # A more robust solution might involve a full reconnect if mismatches are persistent.
+                                        # For now, we'll log the error and skip this packet by using `continue`.
+                                        # To also force a re-fetch of signal names on the next main loop iteration of sse_listener:
+                                        self._signal_names_cache = None # Ensure re-fetch
+                                        # This will cause the next call to _get_signal_names to fetch fresh.
+                                        # However, signal_names variable in current scope is stale.
+                                        # The problem is that signal_names is fetched once per SSE connection attempt.
+                                        # If it's wrong, the current connection is likely compromised.
+                                        # Let's log, clear cache, and then break from this inner processing loop to force a full reconnect.
+                                        # This seems safer than continuing to process with mismatched names.
+                                        # The outer `while True` loop in `sse_listener` will handle the reconnect.
+                                        # Update: The request was to log and continue.
+                                        # If we continue, we are skipping this packet. The signal_names list remains the same for the current connection.
+                                        # If the server starts sending different length data consistently, the cache won't help until a full reconnect.
+                                        # Clearing the cache and continuing means the *next* time _get_signal_names is called (after a reconnect), it will fetch.
+                                        # This seems like a reasonable compromise.
+                                        self._signal_names_cache = None # Invalidate cache for next full connection attempt
+                                        _LOGGER.warning("Signal names cache cleared. A full reconnect will be needed to refresh signal names if the issue persists.")
+                                        continue # Skip this data packet
+
                                     processed_data = dict(zip(signal_names, data_list))
 
                                     if callback is None:
