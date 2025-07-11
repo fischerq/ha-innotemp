@@ -109,12 +109,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "config_data is None, cannot set initial states on coordinator."
         )
 
-    # Pass the coordinator's async_set_updated_data as the callback for SSE
-    # This should be set up regardless of initial data, to catch ongoing updates.
-    coordinator.sse_task = hass.async_create_task(
-        api_client.async_sse_connect(coordinator.async_set_updated_data)
-    )
-
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
         "coordinator": coordinator,

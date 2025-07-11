@@ -115,9 +115,6 @@ async def async_setup_entry(
     _LOGGER.debug(
         "Config_flow.py: Setting up SSE connection via its async_setup_entry."
     )
-    coordinator.sse_task = hass.async_create_task(
-        api_client.async_sse_connect(coordinator.async_set_updated_data)
-    )
 
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,

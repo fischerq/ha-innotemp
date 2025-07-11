@@ -12,13 +12,11 @@ _LOGGER.setLevel(logging.WARNING)  # Changed logger level to debug
 # Custom exceptions for better error handling
 class InnotempApiError(Exception):
     """Generic Innotemp API error."""
-
     pass
 
 
 class InnotempAuthError(InnotempApiError):
     """Innotemp API authentication error."""
-
     pass
 
 
@@ -211,7 +209,6 @@ class InnotempApiClient:
 
     async def _get_signal_names(self) -> list[str]:
         """Fetch the list of signal names for the SSE stream."""
-        # *** FIX: Add credentials to this call ***
         init_data = {"init": "1", "un": self._username, "pw": self._password}
         response = await self._execute_with_retry(
             "POST", "live_signal.read.php", data=init_data
@@ -271,6 +268,10 @@ class InnotempApiClient:
                                     else:
                                         # Corrected: async_set_updated_data is synchronous
                                         callback(processed_data)
+                                else:
+                                    _LOGGER.warning(
+                                        "Received non-list SSE data: %s", data_list
+                                    )
                             except (json.JSONDecodeError, IndexError) as e:
                                 _LOGGER.warning("Error processing SSE data line: %s", e)
 
