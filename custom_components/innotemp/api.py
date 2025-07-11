@@ -194,18 +194,31 @@ class InnotempApiClient:
 
         _LOGGER.debug(f"Sending command to value.save.php with payload: {command_data}")
 
-        result = await self._execute_with_retry(
-            "POST", "value.save.php", data=command_data
-        )
-        if result and result.get("info", "").startswith("success"):
-            _LOGGER.debug(
-                f"Command sent successfully for room {room_id}: {param} -> {val_new}. Response: {result}"
+        try:
+            result = await self._execute_with_retry(
+                "POST", "value.save.php", data=command_data
             )
-            return True
-        _LOGGER.error(
-            f"Failed to send command for room {room_id}: {param} -> {val_new}. Payload sent: {command_data}. Response: {result}"
-        )
-        return False
+            if result and result.get("info", "").startswith("success"):
+                _LOGGER.debug(
+                    f"Command sent successfully for room {room_id}: {param} -> {val_new}. Response: {result}"
+                )
+                return True
+
+            # This error log is for non-exception failures (e.g. API returns success=false)
+            _LOGGER.error(
+                f"API indicated failure for command room {room_id}: {param} -> {val_new}. Payload: {command_data}. Response: {result}"
+            )
+            return False
+        except InnotempAuthError as e:
+            _LOGGER.error(
+                f"Authentication error sending command for room {room_id}: {param} -> {val_new}. Payload: {command_data}. Error: {e}"
+            )
+            raise # Re-raise to allow select.py or other callers to handle
+        except InnotempApiError as e: # Catch other API errors from _execute_with_retry
+            _LOGGER.error(
+                f"API error sending command for room {room_id}: {param} -> {val_new}. Payload: {command_data}. Error: {e}"
+            )
+            raise # Re-raise
 
     async def _get_signal_names(self) -> list[str]:
         """Fetch the list of signal names for the SSE stream."""
