@@ -320,31 +320,37 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
 
         new_api_value = OPTION_TO_API_VALUE[option]
 
-        # Get previous value for the API call
-        # It's crucial that self.coordinator.data is available here.
-        # If not, the command might fail or use an incorrect previous value.
-        previous_api_value = None
-        if self.coordinator.data is not None:
-            previous_api_value = self.coordinator.data.get(self._param_id)
+        # Determine the previous API value based on the select entity's current displayed option.
+        previous_api_value: int | None = None
+        current_displayed_option_str = self.current_option # This is a string like "On", "Off", "Auto"
 
-        if previous_api_value is None:
+        if current_displayed_option_str is not None:
+            previous_api_value = OPTION_TO_API_VALUE.get(current_displayed_option_str)
+            if previous_api_value is None: # Should not happen if current_option returns valid options
+                _LOGGER.error(
+                    f"Internal error: current_option '{current_displayed_option_str}' for {self.entity_id} (param {self._param_id}) "
+                    f"is not in OPTION_TO_API_VALUE map. prev_val will be None."
+                )
+        else:
+            # This means self.current_option returned None, which implies the coordinator
+            # does not have valid/parseable data for this param_id.
+            # The original code would also result in previous_api_value being None in this case
+            # if self.coordinator.data.get(self._param_id) was None or unparseable.
             _LOGGER.warning(
-                f"Cannot determine previous value for {self.entity_id} (param {self._param_id}) when setting to '{option}'. "
-                "API command might be incomplete or use a default previous value if supported by API."
-                # Consider if we should prevent the command or send a conventional 'unknown' previous value
+                f"Cannot determine previous value for {self.entity_id} (param {self._param_id}) because its current "
+                f"displayed option is None. This suggests coordinator data is missing or invalid for this parameter. "
+                f"Proceeding with prev_val as None (will be sent as empty string to API)."
             )
-            # For safety, one might choose to not send the command if prev value is critical and unknown.
-            # However, many APIs might accept a command without a perfect previous value.
-            # For now, we'll proceed, but this is a point of potential improvement/config.
-            # Setting previous_api_value to the new_api_value if unknown might be a safe bet for some APIs
-            # to indicate no change if it was already in that state, or just send what we have.
-            # Let's assume the API can handle it or that data will refresh shortly.
-            # A common pattern is to use the current state if known, or a sentinel if not.
-            # For now, we'll pass what we have (which might be None).
+
+        # It's important to log what previous_api_value ended up being.
+        # If it's None, the API client will send an empty string for val_prev.
+        # If the API requires a specific previous value and doesn't accept an empty string
+        # when the state is unknown/uninitialized, that's a limitation or an area
+        # for future improvement in how initial values are handled or defaulted.
 
         _LOGGER.debug(
             f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
-            f"new_val {new_api_value} (from option '{option}'), prev_val {previous_api_value}"
+            f"new_val {new_api_value} (from option '{option}'), prev_val {previous_api_value} (derived from current_option='{current_displayed_option_str}')"
         )
 
         try:
