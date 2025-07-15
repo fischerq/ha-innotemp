@@ -1,14 +1,14 @@
 """DataUpdateCoordinator for Innotemp."""
 
+from typing import Any
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
 
-# import re # No longer needed as _local_slugify is moved
 from .const import DOMAIN
 import logging
-from .api_parser import slugify_text # Import the moved function
+from .api_parser import slugify_text
 
 _LOGGER = logging.getLogger(__name__)
 
