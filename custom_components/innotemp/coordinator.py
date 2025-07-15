@@ -204,3 +204,30 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
             "name": "Innotemp Heating Controller",  # Main controller device name
             "manufacturer": "Innotemp",
         }
+
+    def _get_api_value(self) -> Any | None:
+        """
+        Helper to get the raw API value for the entity's param_id from coordinator data.
+        Handles None checks for coordinator data and the specific param_id.
+        """
+        # Ensure _param_id attribute exists on the subclass
+        param_id = getattr(self, "_param_id", None)
+        if param_id is None:
+            _LOGGER.error(
+                f"Entity {self.entity_id} is missing _param_id attribute for _get_api_value."
+            )
+            return None
+
+        if self.coordinator.data is None:
+            _LOGGER.debug(
+                f"Entity {self.entity_id} ({param_id}): Coordinator data is None."
+            )
+            return None
+
+        value = self.coordinator.data.get(param_id)
+        if value is None:
+            _LOGGER.debug(
+                f"Entity {self.entity_id} ({param_id}): Param_id not found in coordinator data."
+            )
+            return None
+        return value
