@@ -242,10 +242,15 @@ class InnotempApiClient:
             self._signal_names_cache = response  # Cache the fetched names
             return response
 
-        _LOGGER.error("Failed to fetch signal names or response is not a list. Response: %s", response)
+        _LOGGER.error(
+            "Failed to fetch signal names or response is not a list. Response: %s",
+            response,
+        )
         # Clear cache on error to ensure retry on next attempt if applicable
         self._signal_names_cache = None
-        raise InnotempApiError("Could not fetch signal names or response was not a list.")
+        raise InnotempApiError(
+            "Could not fetch signal names or response was not a list."
+        )
 
     async def async_sse_connect(
         self, callback: Callable[[Dict[str, Any]], Awaitable[None]]
@@ -295,7 +300,9 @@ class InnotempApiClient:
                                         # Clear signal names cache to force re-fetch on next connection attempt,
                                         # as the signal list might have changed.
                                         self._signal_names_cache = None
-                                        _LOGGER.warning("Cleared signal names cache due to SSE data length mismatch. Will attempt to re-fetch on next cycle.")
+                                        _LOGGER.warning(
+                                            "Cleared signal names cache due to SSE data length mismatch. Will attempt to re-fetch on next cycle."
+                                        )
                                         # Depending on strictness, we might raise an error or break the loop here.
                                         # For now, log, clear cache, and continue to next message or retry cycle.
                                         # If we `continue` here, it means we skip this specific data packet.
@@ -309,7 +316,9 @@ class InnotempApiClient:
                                         # A more robust solution might involve a full reconnect if mismatches are persistent.
                                         # For now, we'll log the error and skip this packet by using `continue`.
                                         # To also force a re-fetch of signal names on the next main loop iteration of sse_listener:
-                                        self._signal_names_cache = None # Ensure re-fetch
+                                        self._signal_names_cache = (
+                                            None  # Ensure re-fetch
+                                        )
                                         # This will cause the next call to _get_signal_names to fetch fresh.
                                         # However, signal_names variable in current scope is stale.
                                         # The problem is that signal_names is fetched once per SSE connection attempt.
@@ -322,9 +331,11 @@ class InnotempApiClient:
                                         # If the server starts sending different length data consistently, the cache won't help until a full reconnect.
                                         # Clearing the cache and continuing means the *next* time _get_signal_names is called (after a reconnect), it will fetch.
                                         # This seems like a reasonable compromise.
-                                        self._signal_names_cache = None # Invalidate cache for next full connection attempt
-                                        _LOGGER.warning("Signal names cache cleared. A full reconnect will be needed to refresh signal names if the issue persists.")
-                                        continue # Skip this data packet
+                                        self._signal_names_cache = None  # Invalidate cache for next full connection attempt
+                                        _LOGGER.warning(
+                                            "Signal names cache cleared. A full reconnect will be needed to refresh signal names if the issue persists."
+                                        )
+                                        continue  # Skip this data packet
 
                                     processed_data = dict(zip(signal_names, data_list))
 
