@@ -9,7 +9,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import InnotempApiClient
 from .coordinator import InnotempDataUpdateCoordinator
-from .api_parser import extract_initial_states # Moved to api_parser
+from .api_parser import extract_initial_states  # Moved to api_parser
 from .const import DOMAIN
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT, Platform.NUMBER]

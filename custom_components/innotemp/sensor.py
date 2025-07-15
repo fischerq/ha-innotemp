@@ -27,7 +27,7 @@ from .api_parser import (
     # ONOFFAUTO_OPTION_TO_API_VALUE, # Not needed for sensor
     ONOFFAUTO_OPTIONS_LIST,
     API_VALUE_TO_ONOFF_OPTION,
-    ONOFF_OPTIONS_LIST
+    ONOFF_OPTIONS_LIST,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,9 +38,9 @@ _LOGGER = logging.getLogger(__name__)
 def _create_sensor_entity_data(
     item_data: Dict[str, Any],
     room_attributes: Dict[str, Any],
-    numeric_room_id: Optional[int], # Sensors generally don't need numeric_room_id
+    numeric_room_id: Optional[int],  # Sensors generally don't need numeric_room_id
     component_attributes: Dict[str, Any],
-    component_key_hint: str, # e.g. "display.input", "param"
+    component_key_hint: str,  # e.g. "display.input", "param"
 ) -> Optional[Dict[str, Any]]:
     """
     Processes an item from config data to determine if it's a sensor entity
@@ -52,7 +52,7 @@ def _create_sensor_entity_data(
 
     if not (param_id and unit):
         # Log only if it looked like it could have been an entity but is missing crucial parts
-        if param_id or unit: # If at least one was present
+        if param_id or unit:  # If at least one was present
             _LOGGER.debug(
                 f"Sensor: Skipping item (missing var or unit): {item_data} in room {room_attributes.get('var')}, "
                 f"component {component_attributes.get('var', component_attributes.get('type'))} from {component_key_hint}"
@@ -62,7 +62,7 @@ def _create_sensor_entity_data(
     sensor_type_data = {
         "room_attributes": room_attributes,
         "component_attributes": component_attributes,
-        "item_data": item_data, # contains label, var, unit
+        "item_data": item_data,  # contains label, var, unit
         "param_id": param_id,
         "unit": unit,
         "component_key_hint": component_key_hint,
@@ -84,7 +84,7 @@ def _create_sensor_entity_data(
                 f"Failed to parse VAR: unit string '{unit}' for {param_id} from {component_key_hint}. "
                 f"Treating as regular sensor."
             )
-            sensor_type_data["sensor_class"] = "RegularSensor" # Fallback
+            sensor_type_data["sensor_class"] = "RegularSensor"  # Fallback
     else:
         sensor_type_data["sensor_class"] = "RegularSensor"
 
@@ -118,7 +118,14 @@ async def async_setup_entry(
 
     # Keys for components within a room that might contain 'input', 'output', or direct sensor items
     possible_sensor_containers_keys = [
-        "display", "param", "mixer", "pump", "piseq", "radiator", "drink", "main",
+        "display",
+        "param",
+        "mixer",
+        "pump",
+        "piseq",
+        "radiator",
+        "drink",
+        "main",
     ]
 
     sensor_entities_data = process_room_config_data(
@@ -129,14 +136,16 @@ async def async_setup_entry(
 
     entities: List[SensorEntity] = []
     for entity_data in sensor_entities_data:
-        sensor_class_type = entity_data.pop("sensor_class") # Get and remove to avoid passing to constructor
+        sensor_class_type = entity_data.pop(
+            "sensor_class"
+        )  # Get and remove to avoid passing to constructor
 
         common_args = {
             "coordinator": coordinator,
             "config_entry": entry,
             "room_attributes": entity_data["room_attributes"],
             "component_attributes": entity_data["component_attributes"],
-            "sensor_data": entity_data["item_data"], # This is the original item_data
+            "sensor_data": entity_data["item_data"],  # This is the original item_data
         }
 
         if sensor_class_type == "EnumSensor":
@@ -154,13 +163,18 @@ async def async_setup_entry(
         elif sensor_class_type == "RegularSensor":
             entities.append(InnotempSensor(**common_args))
         else:
-            _LOGGER.warning(f"Unknown sensor class type: {sensor_class_type} for {entity_data.get('param_id')}")
-
+            _LOGGER.warning(
+                f"Unknown sensor class type: {sensor_class_type} for {entity_data.get('param_id')}"
+            )
 
     if not entities:
-        _LOGGER.info("No Innotemp sensor entities were created after parsing with new logic.")
+        _LOGGER.info(
+            "No Innotemp sensor entities were created after parsing with new logic."
+        )
     else:
-        _LOGGER.info(f"Successfully created {len(entities)} Innotemp sensor entities with new logic.")
+        _LOGGER.info(
+            f"Successfully created {len(entities)} Innotemp sensor entities with new logic."
+        )
 
     async_add_entities(entities)
 

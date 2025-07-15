@@ -27,9 +27,12 @@ API_VALUE_TO_ONOFF_OPTION: Dict[str, str] = {
     "1": "On",
     "1.0": "On",
 }
-ONOFF_OPTION_TO_API_VALUE: Dict[str, str] = { # Not strictly needed for sensor but good for completeness
-    v: k for k, v in API_VALUE_TO_ONOFF_OPTION.items() # This will be {"Off": "0.0", "On": "1.0"} or similar based on dict order
-}
+ONOFF_OPTION_TO_API_VALUE: Dict[str, str] = (
+    {  # Not strictly needed for sensor but good for completeness
+        v: k
+        for k, v in API_VALUE_TO_ONOFF_OPTION.items()  # This will be {"Off": "0.0", "On": "1.0"} or similar based on dict order
+    }
+)
 ONOFF_OPTIONS_LIST: List[str] = ["Off", "On"]
 
 
@@ -131,18 +134,18 @@ def extract_numeric_room_id(room_attributes: Dict[str, Any]) -> Optional[int]:
         return None
 
 
-ENTITY_DATA_T = TypeVar("ENTITY_DATA_T") # Generic type for entity specific data
+ENTITY_DATA_T = TypeVar("ENTITY_DATA_T")  # Generic type for entity specific data
 
 # Define a callback type for processing an individual item (entry, input, output)
 ItemProcessorCallback = Callable[
     [
         Dict[str, Any],  # item_data (e.g., content of an 'entry' or 'input')
         Dict[str, Any],  # room_attributes
-        Optional[int],   # numeric_room_id (can be None if not applicable or not found)
+        Optional[int],  # numeric_room_id (can be None if not applicable or not found)
         Dict[str, Any],  # component_attributes
-        str,             # component_key_hint (e.g., "display", "param")
+        str,  # component_key_hint (e.g., "display", "param")
     ],
-    Optional[ENTITY_DATA_T], # Return some data or None if item is not relevant
+    Optional[ENTITY_DATA_T],  # Return some data or None if item is not relevant
 ]
 
 
@@ -232,7 +235,9 @@ def process_room_config_data(
                     )
                     continue
 
-                for component_item_data in component_items_to_process: # e.g., one 'display' block
+                for (
+                    component_item_data
+                ) in component_items_to_process:  # e.g., one 'display' block
                     if not isinstance(component_item_data, dict):
                         _LOGGER.debug(
                             f"Skipping non-dict item in component_data_container list for room "
@@ -255,9 +260,14 @@ def process_room_config_data(
                             actual_entries.extend(entry_data_list)
 
                         for actual_item_data in actual_entries:
-                            if not isinstance(actual_item_data, dict): continue
+                            if not isinstance(actual_item_data, dict):
+                                continue
                             processed_data = item_processor(
-                                actual_item_data, room_attributes, numeric_room_id, component_attributes, container_key
+                                actual_item_data,
+                                room_attributes,
+                                numeric_room_id,
+                                component_attributes,
+                                container_key,
                             )
                             if processed_data:
                                 processed_entities_data.append(processed_data)
@@ -273,23 +283,37 @@ def process_room_config_data(
                                 actual_sub_items.extend(sub_item_data_list)
 
                             for actual_item_data in actual_sub_items:
-                                if not isinstance(actual_item_data, dict): continue
+                                if not isinstance(actual_item_data, dict):
+                                    continue
                                 processed_data = item_processor(
-                                    actual_item_data, room_attributes, numeric_room_id, component_attributes, f"{container_key}.{sub_key}"
+                                    actual_item_data,
+                                    room_attributes,
+                                    numeric_room_id,
+                                    component_attributes,
+                                    f"{container_key}.{sub_key}",
                                 )
                                 if processed_data:
                                     processed_entities_data.append(processed_data)
 
                     # Fallback: Process the component_item_data itself if it has no "entry", "input", or "output"
                     # and the item_processor is designed to handle this (e.g. for direct sensors not in input/output)
-                    if not entry_data_list and not component_item_data.get("input") and not component_item_data.get("output"):
+                    if (
+                        not entry_data_list
+                        and not component_item_data.get("input")
+                        and not component_item_data.get("output")
+                    ):
                         processed_data = item_processor(
-                            component_item_data, room_attributes, numeric_room_id, component_attributes, container_key
+                            component_item_data,
+                            room_attributes,
+                            numeric_room_id,
+                            component_attributes,
+                            container_key,
                         )
                         if processed_data:
                             processed_entities_data.append(processed_data)
 
     return processed_entities_data
+
 
 # Example of how an item_processor callback might look (will be defined in each platform file)
 # def _example_select_item_processor(

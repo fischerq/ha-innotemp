@@ -25,16 +25,27 @@ def _is_potential_number_entity(item_data: Dict[str, Any]) -> bool:
     param_id = item_data.get("var")
     # access = item_data.get("access", "user") # Could be used later if needed
 
-    if not (param_id and unit and unit != "ONOFFAUTO"): # and access in ["user", "admin"]
+    if not (
+        param_id and unit and unit != "ONOFFAUTO"
+    ):  # and access in ["user", "admin"]
         return False
 
     # Check for known numeric units
-    if unit in [
-        UnitOfTemperature.CELSIUS,
-        UnitOfTemperature.FAHRENHEIT,
-        PERCENTAGE,
-        "K", "s", "min", "h", "bar", "rpm",
-    ] or "%" in unit:
+    if (
+        unit
+        in [
+            UnitOfTemperature.CELSIUS,
+            UnitOfTemperature.FAHRENHEIT,
+            PERCENTAGE,
+            "K",
+            "s",
+            "min",
+            "h",
+            "bar",
+            "rpm",
+        ]
+        or "%" in unit
+    ):
         return True
 
     # Broad assumption for now: if it has a unit, is not ONOFFAUTO, and is in an 'entry',
@@ -48,7 +59,9 @@ def _is_potential_number_entity(item_data: Dict[str, Any]) -> bool:
 def _create_number_entity_data(
     item_data: Dict[str, Any],
     room_attributes: Dict[str, Any],
-    numeric_room_id: Optional[int], # Numbers use string room_id from room_attributes.get("var")
+    numeric_room_id: Optional[
+        int
+    ],  # Numbers use string room_id from room_attributes.get("var")
     component_attributes: Dict[str, Any],
     component_key_hint: str,
 ) -> Optional[Dict[str, Any]]:
@@ -72,7 +85,7 @@ def _create_number_entity_data(
     else:
         unit = item_data.get("unit")
         param_id = item_data.get("var")
-        if param_id and unit: # Log only if it looked like it could have been an entity
+        if param_id and unit:  # Log only if it looked like it could have been an entity
             _LOGGER.debug(
                 f"Number: Entry unit '{unit}' for {param_id} from {component_key_hint} not recognized as numeric or is ONOFFAUTO."
             )
@@ -100,7 +113,12 @@ async def async_setup_entry(
     )
 
     possible_containers_keys = [
-        "param", "mixer", "piseq", "radiator", "drink", "main",
+        "param",
+        "mixer",
+        "piseq",
+        "radiator",
+        "drink",
+        "main",
         # 'pump', 'display' usually have 'input'/'output' for sensors,
         # less likely 'entry' for numbers
     ]
@@ -116,7 +134,7 @@ async def async_setup_entry(
         entities.append(
             InnotempNumber(
                 coordinator=coordinator,
-                config_entry=entry, # Pass the main config_entry
+                config_entry=entry,  # Pass the main config_entry
                 room_attributes=entity_data["room_attributes"],
                 component_attributes=entity_data["component_attributes"],
                 param_id=entity_data["param_id"],
@@ -129,7 +147,9 @@ async def async_setup_entry(
             "No Number entities found in Innotemp configuration using new parser."
         )
     else:
-        _LOGGER.info(f"Found {len(entities)} Innotemp Number entities to be added using new parser.")
+        _LOGGER.info(
+            f"Found {len(entities)} Innotemp Number entities to be added using new parser."
+        )
 
     async_add_entities(entities)
 

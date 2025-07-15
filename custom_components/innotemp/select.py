@@ -57,8 +57,8 @@ def _create_select_entity_data(
             _LOGGER.debug(
                 f"Select: Skipping ONOFFAUTO item {param_id} for room {room_attributes.get('var')} due to missing numeric_room_id."
             )
-        else: # not param_id
-             _LOGGER.warning(
+        else:  # not param_id
+            _LOGGER.warning(
                 f"Select: Found ONOFFAUTO entry without 'var' (param_id) in room {room_attributes.get('var')}, "
                 f"component {component_attributes.get('var', component_attributes.get('type'))} from {component_key_hint}: {item_data}"
             )
@@ -86,7 +86,13 @@ async def async_setup_entry(
     )
 
     possible_containers_keys = [
-        "param", "pump", "piseq", "mixer", "drink", "radiator", "main"
+        "param",
+        "pump",
+        "piseq",
+        "mixer",
+        "drink",
+        "radiator",
+        "main",
     ]
 
     select_entities_data = process_room_config_data(
@@ -164,7 +170,7 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
         """Return the currently selected option."""
         api_value = self._get_api_value()
         if api_value is None:
-            return None # Or a default option
+            return None  # Or a default option
 
         # Convert numeric API value to string option
         try:
@@ -198,7 +204,9 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
         )  # This is a string like "On", "Off", "Auto"
 
         if current_displayed_option_str is not None:
-            previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(current_displayed_option_str)
+            previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(
+                current_displayed_option_str
+            )
             if (
                 previous_api_value is None
             ):  # Should not happen if current_option returns valid options
