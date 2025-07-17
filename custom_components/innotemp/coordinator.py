@@ -15,63 +15,6 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 
-# Function to extract initial states from the full config_data
-def extract_initial_states(config_data_full: dict) -> dict:
-    """
-    Parses the full config_data from async_get_config() and extracts a flat
-    dictionary of param_id: value pairs for initial coordinator state.
-    """
-    initial_states = {}
-
-    def recurse_extract(data_node):
-        if isinstance(data_node, dict):
-            param_id = data_node.get("var")
-            unit = data_node.get("unit")
-            current_value = None
-
-            if param_id and unit:  # Only consider nodes that look like parameters
-                # Prioritize '#text' as it's common for text content in XML-like dicts
-                if "#text" in data_node:
-                    current_value = data_node["#text"]
-                elif "value" in data_node:  # Check 'value' attribute
-                    current_value = data_node["value"]
-                elif "val" in data_node:  # Check 'val' attribute
-                    current_value = data_node["val"]
-                # If the node itself is a simple string/number and no other value found,
-                # this case is harder to generically identify without more structure knowledge.
-                # For now, we rely on explicit value keys or #text.
-
-            if param_id and current_value is not None:
-                # Store values as strings, similar to how SSE might deliver them
-                initial_states[param_id] = str(current_value)
-                _LOGGER.debug(
-                    f"Found initial state for param {param_id}: {current_value}"
-                )
-
-            # Recursively process child dictionary values or list items
-            for key, value in data_node.items():
-                if key.startswith("@"):  # Skip XML-like attributes
-                    continue
-                recurse_extract(value)
-
-        elif isinstance(data_node, list):
-            for item in data_node:
-                recurse_extract(item)
-
-    # Start recursion from the top level of config_data_full
-    if isinstance(config_data_full, dict):
-        for top_key, top_value in config_data_full.items():
-            _LOGGER.debug(f"Extracting initial states from top_key: {top_key}")
-            recurse_extract(top_value)
-    else:
-        _LOGGER.warning(
-            f"extract_initial_states: config_data_full is not a dict, type: {type(config_data_full)}"
-        )
-
-    _LOGGER.info(f"Extracted {len(initial_states)} initial states for the coordinator.")
-    return initial_states
-
-
 # Local slugify implementation as a fallback
 def _local_slugify(text: str) -> str:
     """A simple local slugify function."""
