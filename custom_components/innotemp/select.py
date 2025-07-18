@@ -8,8 +8,14 @@ from typing import Any, Dict, Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_registry import async_get, EntityRegistry
+from homeassistant.helpers.entity_registry import (
+    EntityRegistry,
+    async_get,
+    RegistryEntry,
+)
 
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
@@ -105,6 +111,7 @@ async def async_setup_entry(
     for entity_data in select_entities_data:
         entities.append(
             InnotempInputSelect(
+                hass=hass,
                 coordinator=coordinator,
                 config_entry=entry,
                 room_attributes=entity_data["room_attributes"],
@@ -132,6 +139,7 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
 
     def __init__(
         self,
+        hass: HomeAssistant,
         coordinator: InnotempDataUpdateCoordinator,
         config_entry: ConfigEntry,
         room_attributes: dict,  # Contains string 'var' for room identification
@@ -141,6 +149,7 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
         param_data: dict,  # The ONOFFAUTO entry's own data dict
     ):
         """Initialize the Innotemp InputSelect entity."""
+        self.hass = hass
         self._room_attributes = room_attributes  # Keep for context if needed elsewhere
         self._component_attributes = component_attributes
         self._param_id = param_id
@@ -187,6 +196,27 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
             )
             return None
 
+    def _find_corresponding_sensor_entity_id(self) -> str | None:
+        """Find the entity_id of the corresponding ONOFFAUTO enum sensor."""
+        ent_reg: EntityRegistry = async_get(self.hass)
+
+        # The enum sensor has '_status' appended to its param_id to form a unique ID
+        expected_unique_id_suffix = f"{self._param_id}_status"
+
+        for entity_id, registry_entry in ent_reg.entities.items():
+            if (
+                registry_entry.platform == DOMAIN
+                and registry_entry.unique_id.endswith(expected_unique_id_suffix)
+            ):
+                _LOGGER.debug(
+                    f"Found corresponding sensor '{entity_id}' for select entity '{self.entity_id}'."
+                )
+                return entity_id
+        _LOGGER.warning(
+            f"Could not find a corresponding sensor for select entity '{self.entity_id}' with unique_id_suffix '{expected_unique_id_suffix}'."
+        )
+        return None
+
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         if option not in ONOFFAUTO_OPTION_TO_API_VALUE:
@@ -196,49 +226,55 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
             return
 
         new_api_value = ONOFFAUTO_OPTION_TO_API_VALUE[option]
-
-        # Determine the previous API value based on the select entity's current displayed option.
         previous_api_value: int | None = None
-        current_displayed_option_str = (
-            self.current_option
-        )  # This is a string like "On", "Off", "Auto"
+        prev_val_source_info = "no source"
 
-        if current_displayed_option_str is not None:
-            previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(
-                current_displayed_option_str
-            )
-            if (
-                previous_api_value is None
-            ):  # Should not happen if current_option returns valid options
-                _LOGGER.error(
-                    f"Internal error: current_option '{current_displayed_option_str}' for {self.entity_id} (param {self._param_id}) "
-                    f"is not in ONOFFAUTO_OPTION_TO_API_VALUE map. prev_val will be None."
+        # New method: Find corresponding sensor and get its state
+        sensor_entity_id = self._find_corresponding_sensor_entity_id()
+        if sensor_entity_id:
+            sensor_state: State | None = self.hass.states.get(sensor_entity_id)
+            if sensor_state and sensor_state.state is not None:
+                sensor_option = sensor_state.state
+                previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(sensor_option)
+                prev_val_source_info = (
+                    f"corresponding sensor '{sensor_entity_id}' state '{sensor_option}'"
+                )
+                if previous_api_value is None:
+                    _LOGGER.warning(
+                        f"The state '{sensor_option}' of sensor '{sensor_entity_id}' is not in the ONOFFAUTO_OPTION_TO_API_VALUE map."
+                    )
+            else:
+                _LOGGER.warning(
+                    f"Could not get state for corresponding sensor '{sensor_entity_id}'. It might be unavailable or has no state."
                 )
         else:
-            # This means self.current_option returned None, which implies the coordinator
-            # does not have valid/parseable data for this param_id.
-            # The original code would also result in previous_api_value being None in this case
-            # if self.coordinator.data.get(self._param_id) was None or unparseable.
             _LOGGER.warning(
-                f"Cannot determine previous value for {self.entity_id} (param {self._param_id}) because its current "
-                f"displayed option is None. This suggests coordinator data is missing or invalid for this parameter. "
-                f"Proceeding with prev_val as None (will be sent as empty string to API)."
+                f"No corresponding sensor found for {self.entity_id}. Falling back to using select's own state."
             )
 
-        # It's important to log what previous_api_value ended up being.
-        # If it's None, the API client will send an empty string for val_prev.
-        # If the API requires a specific previous value and doesn't accept an empty string
-        # when the state is unknown/uninitialized, that's a limitation or an area
-        # for future improvement in how initial values are handled or defaulted.
+        # Fallback to original method if sensor method fails
+        if previous_api_value is None:
+            current_displayed_option_str = self.current_option
+            prev_val_source_info = f"select entity's own state '{current_displayed_option_str}'"
+            if current_displayed_option_str is not None:
+                previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(
+                    current_displayed_option_str
+                )
+            else:
+                _LOGGER.warning(
+                    f"Cannot determine previous value for {self.entity_id} (param {self._param_id}) from its own state "
+                    f"because its current displayed option is None. This suggests coordinator data is missing or invalid. "
+                    f"Proceeding with prev_val as None (will be sent as empty string to API)."
+                )
 
         _LOGGER.debug(
             f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
-            f"new_val {new_api_value} (from option '{option}'), prev_val {previous_api_value} (derived from current_option='{current_displayed_option_str}')"
+            f"new_val {new_api_value} (from option '{option}'), prev_val {previous_api_value} (derived from {prev_val_source_info})"
         )
 
         try:
             success = await self.coordinator.api_client.async_send_command(
-                room_id=self._numeric_api_room_id,  # Use the stored numeric room ID
+                room_id=self._numeric_api_room_id,
                 param=self._param_id,
                 val_new=new_api_value,
                 val_prev=previous_api_value,
@@ -247,13 +283,7 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
                 _LOGGER.info(
                     f"Successfully sent command for {self.entity_id} to set option to '{option}'."
                 )
-                # Optionally, immediately update coordinator data if API confirms change,
-                # or rely on SSE/next poll. For now, rely on external update.
-                # Example of immediate update (if your API confirms state synchronously):
-                # current_data = self.coordinator.data.copy() if self.coordinator.data else {}
-                # current_data[self._param_id] = new_api_value
-                # self.coordinator.async_set_updated_data(current_data)
-                await self.coordinator.async_request_refresh()  # Request a refresh
+                await self.coordinator.async_request_refresh()
             else:
                 _LOGGER.error(
                     f"Failed to send command for {self.entity_id} to set option to '{option}'."
