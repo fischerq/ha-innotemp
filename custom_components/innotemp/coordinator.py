@@ -1,6 +1,6 @@
 """DataUpdateCoordinator for Innotemp."""
 
-from typing import Any
+from typing import Any, Dict
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
@@ -43,6 +43,7 @@ class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
             name="Innotemp",
         )
         self.api_client = api_client
+        self.control_to_state_map: Dict[str, str] = {}
         self.sse_task = hass.async_create_task(
             api_client.async_sse_connect(self.async_set_updated_data)
         )

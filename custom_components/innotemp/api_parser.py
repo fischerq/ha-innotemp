@@ -106,11 +106,135 @@ def parse_var_enum_string(
     return value_to_name, name_to_value, options
 
 
+def create_control_state_map(config_data: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Parses the room configuration to create a map from a controllable 'entry' var
+    to its corresponding state 'input' var based on matching labels within the same component.
+
+    Args:
+        config_data: The raw configuration data from the coordinator.
+
+    Returns:
+        A dictionary mapping a control var to a state var.
+        Example: { "002_e16pmp01_gui001out1": "002_d_pump001inp2", ... }
+    """
+    control_to_state_map: Dict[str, str] = {}
+    possible_container_keys = [
+        "param",
+        "pump",
+        "piseq",
+        "mixer",
+        "drink",
+        "radiator",
+        "main",
+        "display",  # Include display as it might have controls/inputs
+    ]
+
+    if not isinstance(config_data, dict):
+        _LOGGER.error(
+            "create_control_state_map: config_data is not a dictionary. Type: %s",
+            type(config_data),
+        )
+        return control_to_state_map
+
+    # Simplified loop to find the list of rooms, similar to process_room_config_data
+    room_list = []
+    for top_level_value in config_data.values():
+        if isinstance(top_level_value, list):
+            room_list = top_level_value
+            break  # Assume the first list found is the room list
+        elif isinstance(top_level_value, dict) and top_level_value.get(
+            "@attributes", {}
+        ).get("type", "").startswith("room"):
+            room_list.append(top_level_value)
+            # Don't break, might be multiple rooms at top level
+
+    for room_data in room_list:
+        if not isinstance(room_data, dict):
+            continue
+
+        room_var = room_data.get("@attributes", {}).get("var", "UnknownRoom")
+
+        for container_key in possible_container_keys:
+            component_container = room_data.get(container_key)
+            if not component_container:
+                continue
+
+            # Normalize to a list of components
+            components = (
+                component_container
+                if isinstance(component_container, list)
+                else [component_container]
+            )
+
+            for component in components:
+                if not isinstance(component, dict):
+                    continue
+
+                # --- Find Control/State Pairs within this component ---
+                entries_raw = component.get("entry")
+                inputs_raw = component.get("input")
+
+                if not entries_raw or not inputs_raw:
+                    continue  # We need both to make a pair
+
+                # Normalize entries and inputs to lists
+                entries = entries_raw if isinstance(entries_raw, list) else [entries_raw]
+                inputs = inputs_raw if isinstance(inputs_raw, list) else [inputs_raw]
+
+                # Create a lookup map for inputs based on their label
+                input_label_to_var_map: Dict[str, str] = {}
+                for inp in inputs:
+                    if (
+                        isinstance(inp, dict)
+                        and "label" in inp
+                        and "var" in inp
+                        and inp["label"]
+                    ):
+                        cleaned_label = strip_html(inp["label"])
+                        input_label_to_var_map[cleaned_label] = inp["var"]
+
+                if not input_label_to_var_map:
+                    continue  # No valid inputs to match against
+
+                # Iterate through entries and find a match in the input map
+                for entry in entries:
+                    if (
+                        isinstance(entry, dict)
+                        and "label" in entry
+                        and "var" in entry
+                        and entry["label"]
+                    ):
+                        control_var = entry["var"]
+                        control_label = strip_html(entry["label"])
+
+                        if control_label in input_label_to_var_map:
+                            state_var = input_label_to_var_map[control_label]
+                            control_to_state_map[control_var] = state_var
+                            _LOGGER.debug(
+                                "Mapped control '%s' to state '%s' in component '%s' (Room: %s) using label: '%s'",
+                                control_var,
+                                state_var,
+                                component.get("@attributes", {}).get("type", container_key),
+                                room_var,
+                                control_label,
+                            )
+
+    _LOGGER.info(
+        "Created control-to-state mapping with %d entries.",
+        len(control_to_state_map),
+    )
+    _LOGGER.debug("Final control_to_state_map: %s", control_to_state_map)
+    return control_to_state_map
+
+
 def extract_numeric_room_id(room_attributes: Dict[str, Any]) -> Optional[int]:
     """
     Extracts the numeric room ID from room attributes.
     Example room_attributes: {'type': 'room003', 'var': 'RM_0003_NAME', ...}
     """
+    if not room_attributes:
+        return None
     room_type_str = room_attributes.get("type")
     if room_type_str:
         match = re.search(r"room(\d+)", room_type_str)
@@ -267,7 +391,7 @@ def process_room_config_data(
                                 room_attributes,
                                 numeric_room_id,
                                 component_attributes,
-                                container_key,
+                                f"{container_key}.entry",
                             )
                             if processed_data:
                                 processed_entities_data.append(processed_data)

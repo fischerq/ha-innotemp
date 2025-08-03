@@ -4,26 +4,21 @@ from unittest.mock import MagicMock, PropertyMock
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant import config_entries
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from custom_components.innotemp.sensor import async_setup_entry, InnotempSensor
 from custom_components.innotemp.const import DOMAIN
 
 
+from custom_components.innotemp.coordinator import InnotempDataUpdateCoordinator
+
+
 @pytest.fixture
 def mock_coordinator_success(hass: HomeAssistant):
-    coordinator = MagicMock(spec=DataUpdateCoordinator)
+    coordinator = MagicMock(spec=InnotempDataUpdateCoordinator)
     coordinator.hass = hass
     coordinator.data = {
-        "sensors": [
-            {"param": "temp_sensor", "label": "Living Room Temperature (°C)"},
-            {"param": "humidity_sensor", "label": "Living Room Humidity (%)"},
-            {"param": "power_sensor", "label": "Power Usage (kW)"},
-            {
-                "param": "generic_sensor",
-                "label": "Generic Value",
-            },  # Sensor with no unit in label
-        ],
         "temp_sensor": "22.5",
         "humidity_sensor": "45.0",
         "power_sensor": "1.2",

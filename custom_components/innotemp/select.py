@@ -196,27 +196,6 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
             )
             return None
 
-    def _find_corresponding_sensor_entity_id(self) -> str | None:
-        """Find the entity_id of the corresponding ONOFFAUTO enum sensor."""
-        ent_reg: EntityRegistry = async_get(self.hass)
-
-        # The enum sensor has '_status' appended to its param_id to form a unique ID
-        expected_unique_id_suffix = f"{self._param_id}_status"
-
-        for entity_id, registry_entry in ent_reg.entities.items():
-            if (
-                registry_entry.platform == DOMAIN
-                and registry_entry.unique_id.endswith(expected_unique_id_suffix)
-            ):
-                _LOGGER.debug(
-                    f"Found corresponding sensor '{entity_id}' for select entity '{self.entity_id}'."
-                )
-                return entity_id
-        _LOGGER.warning(
-            f"Could not find a corresponding sensor for select entity '{self.entity_id}' with unique_id_suffix '{expected_unique_id_suffix}'."
-        )
-        return None
-
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         if option not in ONOFFAUTO_OPTION_TO_API_VALUE:
@@ -226,46 +205,31 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
             return
 
         new_api_value = ONOFFAUTO_OPTION_TO_API_VALUE[option]
-        previous_api_value: int | None = None
+        previous_api_value: Any | None = None
         prev_val_source_info = "no source"
 
-        # New method: Find corresponding sensor and get its state
-        sensor_entity_id = self._find_corresponding_sensor_entity_id()
-        if sensor_entity_id:
-            sensor_state: State | None = self.hass.states.get(sensor_entity_id)
-            if sensor_state and sensor_state.state is not None:
-                sensor_option = sensor_state.state
-                previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(sensor_option)
-                prev_val_source_info = (
-                    f"corresponding sensor '{sensor_entity_id}' state '{sensor_option}'"
-                )
+        # New robust method: Use the control-to-state map from the coordinator
+        state_var = self.coordinator.control_to_state_map.get(self._param_id)
+
+        if state_var:
+            if self.coordinator.data:
+                previous_api_value = self.coordinator.data.get(state_var)
+                prev_val_source_info = f"coordinator data for mapped state_var '{state_var}'"
                 if previous_api_value is None:
                     _LOGGER.warning(
-                        f"The state '{sensor_option}' of sensor '{sensor_entity_id}' is not in the ONOFFAUTO_OPTION_TO_API_VALUE map."
+                        f"Found mapping from control '{self._param_id}' to state '{state_var}', "
+                        f"but state_var was not found in the coordinator data."
                     )
             else:
                 _LOGGER.warning(
-                    f"Could not get state for corresponding sensor '{sensor_entity_id}'. It might be unavailable or has no state."
+                    "Coordinator data is not available to retrieve previous value."
                 )
         else:
             _LOGGER.warning(
-                f"No corresponding sensor found for {self.entity_id}. Falling back to using select's own state."
+                f"No state_var mapping found for control '{self._param_id}'. "
+                f"Cannot determine previous value. Proceeding with prev_val as None (will be sent as empty string to API)."
             )
-
-        # Fallback to original method if sensor method fails
-        if previous_api_value is None:
-            current_displayed_option_str = self.current_option
-            prev_val_source_info = f"select entity's own state '{current_displayed_option_str}'"
-            if current_displayed_option_str is not None:
-                previous_api_value = ONOFFAUTO_OPTION_TO_API_VALUE.get(
-                    current_displayed_option_str
-                )
-            else:
-                _LOGGER.warning(
-                    f"Cannot determine previous value for {self.entity_id} (param {self._param_id}) from its own state "
-                    f"because its current displayed option is None. This suggests coordinator data is missing or invalid. "
-                    f"Proceeding with prev_val as None (will be sent as empty string to API)."
-                )
+            # No fallback to self.current_option, as it's unreliable and this new method is designed to be the source of truth.
 
         _LOGGER.debug(
             f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
