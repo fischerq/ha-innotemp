@@ -10,7 +10,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import InnotempApiClient
 from .coordinator import InnotempDataUpdateCoordinator
 from .const import DOMAIN
-from .api_parser import extract_initial_states
+from .api_parser import extract_initial_states, create_control_state_map
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT, Platform.NUMBER]
 
@@ -105,9 +105,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coordinator.async_set_updated_data(initial_states)
         else:
             _LOGGER.debug("No initial states extracted from config_data.")
+
+        # Create and store the control-to-state mapping
+        _LOGGER.debug("Creating control-to-state mapping from config_data.")
+        control_map = create_control_state_map(config_data)
+        coordinator.control_to_state_map = control_map
+
     else:
         _LOGGER.warning(
-            "config_data is None, cannot set initial states on coordinator."
+            "config_data is None, cannot set initial states or control map on coordinator."
         )
 
     hass.data[DOMAIN][entry.entry_id] = {

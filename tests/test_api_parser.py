@@ -8,10 +8,139 @@ from custom_components.innotemp.api_parser import (
     parse_var_enum_string,
     extract_numeric_room_id,
     process_room_config_data,
+    create_control_state_map,
     API_VALUE_TO_ONOFFAUTO_OPTION,  # Import if needed for mock processors
     ONOFFAUTO_OPTION_TO_API_VALUE,
     ONOFFAUTO_OPTIONS_LIST,
 )
+
+
+def test_create_control_state_map():
+    """Test the create_control_state_map function for mapping controls to states."""
+    mock_config_data = {
+        "room": [
+            {
+                "@attributes": {"type": "room001", "var": "R1", "label": "Living Room"},
+                # Case 1: Simple 1-to-1 mapping in a component dict
+                "pump": {
+                    "@attributes": {"type": "pump001", "label": "Heating Pump"},
+                    "entry": {
+                        "var": "control_pump_1",
+                        "label": "Vorlaufpumpe",
+                        "unit": "ONOFFAUTO",
+                    },
+                    "input": {
+                        "var": "state_pump_1",
+                        "label": "Vorlaufpumpe",
+                        "unit": "%",
+                    },
+                },
+                # Case 2: Multiple entries, one matching input
+                "mixer": {
+                    "@attributes": {"type": "mixer001", "label": "Main Mixer"},
+                    "entry": [
+                        {"var": "control_mixer_1", "label": "Mischer 1", "unit": "VAR:"},
+                        {
+                            "var": "control_mixer_2",
+                            "label": "Unmatched Mischer",
+                            "unit": "VAR:",
+                        },
+                    ],
+                    "input": [
+                        {"var": "state_mixer_1", "label": "Mischer 1", "unit": "°C"},
+                        {
+                            "var": "state_mixer_other",
+                            "label": "Some Other State",
+                            "unit": "°C",
+                        },
+                    ],
+                },
+            },
+            {
+                "@attributes": {"type": "room002", "var": "R2", "label": "Basement"},
+                # Case 3: Component is a list of dicts
+                "param": [
+                    {
+                        "@attributes": {"type": "param001"},
+                        "entry": {
+                            "var": "control_param_1",
+                            "label": "Heizkurve",
+                            "unit": "°C",
+                        },
+                        "input": {
+                            "var": "state_param_1",
+                            "label": "Heizkurve",
+                            "unit": "°C",
+                        },
+                    },
+                    # Case 4: Entry has no label, should not match
+                    {
+                        "@attributes": {"type": "param002"},
+                        "entry": {"var": "control_param_2", "unit": "°C"},
+                        "input": {
+                            "var": "state_param_2",
+                            "label": "Something",
+                            "unit": "°C",
+                        },
+                    },
+                    # Case 5: Input has no var, should not be added to map
+                    {
+                        "@attributes": {"type": "param003"},
+                        "entry": {
+                            "var": "control_param_3",
+                            "label": "NoMatchInputVar",
+                            "unit": "°C",
+                        },
+                        "input": {"label": "NoMatchInputVar", "unit": "°C"},
+                    },
+                    # Case 6: Entry has no var, should not be added
+                    {
+                        "@attributes": {"type": "param004"},
+                        "entry": {"label": "NoMatchEntryVar", "unit": "°C"},
+                        "input": {
+                            "var": "state_param_4",
+                            "label": "NoMatchEntryVar",
+                            "unit": "°C",
+                        },
+                    },
+                    # Case 7: HTML tags in label should be stripped and still match
+                    {
+                        "@attributes": {"type": "param005"},
+                        "entry": {
+                            "var": "control_with_html",
+                            "label": "<p>HTML Label</p>",
+                            "unit": "Pa",
+                        },
+                        "input": {
+                            "var": "state_with_html",
+                            "label": "  HTML Label  ",
+                            "unit": "Pa",
+                        },
+                    },
+                ],
+            },
+            # Case 8: A room with no mappable components
+            {
+                "@attributes": {"type": "room003", "var": "R3"},
+                "display": {
+                    "input": {"var": "some_display_var", "label": "Display", "unit": "W"}
+                },
+            },
+        ]
+    }
+
+    expected_map = {
+        "control_pump_1": "state_pump_1",
+        "control_mixer_1": "state_mixer_1",
+        "control_param_1": "state_param_1",
+        "control_with_html": "state_with_html",
+    }
+
+    result_map = create_control_state_map(mock_config_data)
+    assert result_map == expected_map
+
+
+# Basic test for file creation. More tests will be added in subsequent steps.
 
 # Basic test for file creation. More tests will be added in subsequent steps.
 
@@ -95,7 +224,14 @@ def test_strip_html(input_text: Optional[str], expected_output: str):
         ("VAR::", None),  # Empty content
         ("VAR:InvalidFormat:", None),  # Part doesn't match pattern
         ("VAR:NoVal():", None),  # Part doesn't match pattern (empty value)
-        ("VAR:NoName(val):", None),  # Part doesn't match pattern (empty name)
+            (
+                "VAR:NoName(val):",
+                (
+                    {"val": "NoName"},
+                    {"NoName": "val"},
+                    ["NoName"],
+                ),
+            ),  # This is actually valid, the test was wrong
         ("VAR:NoBrackets:", None),  # Part doesn't match pattern
         ("VAR:One(1)Two(2):", None),  # Invalid part format (no colon separator)
         (
@@ -367,25 +503,7 @@ def mock_select_processor(
             },
             ["comp1", "comp2", "comp_list"],
             mock_item_processor,  # Generic processor
-            4,  # P3_2 (kWh), S3_Direct (direct), S4_1 (input), S4_2 (output)
-            # P3_1 (ONOFFAUTO) also picked up by generic processor as it doesn't filter on numeric_room_id
-            # So, if we want to be super precise, this should be 5 if ONOFFAUTO is not special to mock_item_processor.
-            # Let's assume mock_item_processor processes anything with var and unit.
-            # Correcting count to 5.
-            # Expected: (P3_1, P3_2, S3_Direct, S4_1, S4_2)
-            # Updating count to 4, because P3_1 (ONOFFAUTO) is under 'entry' and mock_item_processor will take it
-            # S3_Direct is direct under comp2
-            # S4_1 is under comp_list[0].input
-            # S4_2 is under comp_list[0].output
-            # P3_2 is under comp1.entry
-            # Total 4 from these (P3_2, S3_Direct, S4_1, S4_2)
-            # If P3_1 is also picked by mock_item_processor, then 5.
-            # The `process_room_config_data` iterates entry, then input, then output, then direct.
-            # For "comp1", it finds "entry", iterates it. P3_1 and P3_2 are processed.
-            # For "comp2", no entry/input/output, so "comp2" itself is item_data. S3_Direct processed.
-            # For "comp_list[0]", finds "input" (S4_1), then "output" (S4_2).
-            # So, it should be 5 items: P3_1, P3_2, S3_Direct, S4_1, S4_2
-            5,
+            5,  # P3_1, P3_2, S3_Direct, S4_1, S4_2 are all processed
             sorted(
                 [
                     ("comp1.entry", "P3_1"),

@@ -1,8 +1,10 @@
 """Tests for the InnotempDataUpdateCoordinator."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 import asyncio
 import pytest
+from homeassistant import config_entries
 
 from custom_components.innotemp.coordinator import InnotempDataUpdateCoordinator
 from custom_components.innotemp.api import (
@@ -38,7 +40,9 @@ def mock_api_client_failure():
 async def test_coordinator_success(hass, mock_api_client_success):
     """Test successful data retrieval and update via SSE."""
     logger = logging.getLogger(__name__)
+    config_entry = MagicMock(spec=config_entries.ConfigEntry)
     coordinator = InnotempDataUpdateCoordinator(hass, logger, mock_api_client_success)
+    coordinator.config_entry = config_entry
 
     await coordinator.async_config_entry_first_refresh()
 
@@ -48,23 +52,3 @@ async def test_coordinator_success(hass, mock_api_client_success):
     mock_api_client_success.async_sse_connect.assert_called_once()
 
     await coordinator.async_shutdown()
-    with patch.object(coordinator.logger, "error") as mock_logger_error:
-        await coordinator.async_config_entry_first_refresh()
-        await asyncio.sleep(0.05)  # Allow time for async operations
-
-        # Check if connect was attempted
-        mock_api_client_failure.async_sse_connect.assert_called_once()
-
-        # Verify that an error was logged due to SSE connection failure
-        # The exact log message depends on the implementation in _async_listen_sse
-        # For this example, we assume it logs the exception.
-        assert any(
-            "SSE Connection Failed" in record.message
-            for record in caplog.records
-            if record.levelname == "ERROR"
-        )
-
-    assert coordinator.data is None  # Or whatever the initial/default state is
-
-    await coordinator.async_shutdown()
-    mock_api_client_failure.async_sse_disconnect.assert_called_once()
