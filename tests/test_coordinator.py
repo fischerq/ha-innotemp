@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncio
 import pytest
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntryState
 
 from custom_components.innotemp.coordinator import InnotempDataUpdateCoordinator
 from custom_components.innotemp.api import (
@@ -41,6 +42,7 @@ async def test_coordinator_success(hass, mock_api_client_success):
     """Test successful data retrieval and update via SSE."""
     logger = logging.getLogger(__name__)
     config_entry = MagicMock(spec=config_entries.ConfigEntry)
+    config_entry.state = config_entries.ConfigEntryState.SETUP_IN_PROGRESS
     coordinator = InnotempDataUpdateCoordinator(hass, logger, mock_api_client_success)
     coordinator.config_entry = config_entry
 
