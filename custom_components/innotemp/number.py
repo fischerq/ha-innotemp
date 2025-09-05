@@ -174,10 +174,20 @@ class InnotempNumber(InnotempCoordinatorEntity, NumberEntity):
 
         original_label = self._param_data.get("label", f"Setting {self._param_id}")
         cleaned_label = strip_html(original_label)
+        room_id_var = room_attributes.get("var", "NO_ROOM_ID")
+        component_id = component_attributes.get("var") or component_attributes.get(
+            "type", "NO_COMP_ID"
+        )
+
+        new_label = (
+            f"{room_id_var} - {component_id} - {cleaned_label}"
+            if cleaned_label
+            else f"{room_id_var} - {component_id} - Setting {self._param_id}"
+        )
 
         entity_config = {
             "param": self._param_id,
-            "label": cleaned_label if cleaned_label else f"Setting {self._param_id}",
+            "label": new_label,
         }
         super().__init__(coordinator, config_entry, entity_config)
 
@@ -241,15 +251,15 @@ class InnotempNumber(InnotempCoordinatorEntity, NumberEntity):
         if self.coordinator.data is not None:
             previous_api_value = self.coordinator.data.get(self._param_id)
 
-        # The API might expect integers or specific string formatting for numbers
-        # For now, sending as is, assuming API handles float or simple string conversion.
-        # If API expects int, use int(value).
-        # If specific precision is needed, format value: f"{value:.1f}"
         api_value_to_send = value
+
+        # Build the list of previous values to try.
+        # First, the last known value, then None as a fallback (will be sent as an empty string).
+        val_prev_options = [previous_api_value, None]
 
         _LOGGER.debug(
             f"Sending command for {self.entity_id}: room {self._api_room_id}, param {self._param_id}, "
-            f"new_val {api_value_to_send}, prev_val {previous_api_value}"
+            f"new_val {api_value_to_send}, prev_val_options {val_prev_options}"
         )
 
         try:
@@ -257,7 +267,7 @@ class InnotempNumber(InnotempCoordinatorEntity, NumberEntity):
                 room_id=self._api_room_id,
                 param=self._param_id,
                 val_new=api_value_to_send,
-                val_prev=previous_api_value,
+                val_prev_options=val_prev_options,
             )
             if success:
                 _LOGGER.info(

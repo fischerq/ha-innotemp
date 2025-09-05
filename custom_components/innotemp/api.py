@@ -176,52 +176,57 @@ class InnotempApiClient:
         return None
 
     async def async_send_command(
-        self, room_id: int, param: str, val_new: Any, val_prev: Any
+        self, room_id: int, param: str, val_new: Any, val_prev_options: list[Any]
     ) -> bool:
-        """Send a command to change a parameter value."""
-        command_data = {
-            "un": self._username,  # Add credentials for robustness
-            "pw": self._password,
-            "room_id": str(room_id),
-            "param": param,
-            "val_new": str(val_new),
-            # "val_prev": str(val_prev), # Will be added conditionally
-        }
-        if val_prev is not None:
-            command_data["val_prev"] = str(val_prev)
-        else:
-            command_data["val_prev"] = ""  # Send empty string if None
+        """
+        Send a command to change a parameter value, trying multiple previous values if needed.
+        """
+        for val_prev in val_prev_options:
+            command_data = {
+                "un": self._username,
+                "pw": self._password,
+                "room_id": str(room_id),
+                "param": param,
+                "val_new": str(val_new),
+            }
+            if val_prev is not None:
+                command_data["val_prev"] = str(val_prev)
+            else:
+                command_data["val_prev"] = ""  # Send empty string if None
+
             _LOGGER.debug(
-                f"val_prev was None for param {param}, sending empty string for val_prev."
+                f"Attempting to send command for room {room_id}, param {param}: new={val_new}, prev={val_prev}. Payload: {command_data}"
             )
 
-        _LOGGER.debug(f"Sending command to value.save.php with payload: {command_data}")
-
-        try:
-            result = await self._execute_with_retry(
-                "POST", "value.save.php", data=command_data
-            )
-            if result and result.get("info", "").startswith("success"):
-                _LOGGER.debug(
-                    f"Command sent successfully for room {room_id}: {param} -> {val_new}. Response: {result}"
+            try:
+                result = await self._execute_with_retry(
+                    "POST", "value.save.php", data=command_data
                 )
-                return True
+                if result and result.get("info", "").startswith("success"):
+                    _LOGGER.info(
+                        f"Command sent successfully for room {room_id}, param {param}: new={val_new}, prev={val_prev}. Response: {result}"
+                    )
+                    return True
+                else:
+                    # This is not a failure of the request, but the API rejecting the value.
+                    _LOGGER.warning(
+                        f"API rejected command for room {room_id}, param {param} with prev={val_prev}. Response: {result}. Trying next value."
+                    )
+            except InnotempAuthError as e:
+                _LOGGER.error(
+                    f"Authentication error sending command, aborting retries for this action. Error: {e}"
+                )
+                raise  # Re-raise to allow callers to handle auth failures immediately
+            except InnotempApiError as e:
+                _LOGGER.error(
+                    f"API error sending command with prev={val_prev}, trying next value. Error: {e}"
+                )
+                # Continue to the next val_prev option
 
-            # This error log is for non-exception failures (e.g. API returns success=false)
-            _LOGGER.error(
-                f"API indicated failure for command room {room_id}: {param} -> {val_new}. Payload: {command_data}. Response: {result}"
-            )
-            return False
-        except InnotempAuthError as e:
-            _LOGGER.error(
-                f"Authentication error sending command for room {room_id}: {param} -> {val_new}. Payload: {command_data}. Error: {e}"
-            )
-            raise  # Re-raise to allow select.py or other callers to handle
-        except InnotempApiError as e:  # Catch other API errors from _execute_with_retry
-            _LOGGER.error(
-                f"API error sending command for room {room_id}: {param} -> {val_new}. Payload: {command_data}. Error: {e}"
-            )
-            raise  # Re-raise
+        _LOGGER.error(
+            f"All attempts to send command for room {room_id}, param {param} -> {val_new} failed with all provided previous values: {val_prev_options}"
+        )
+        return False
 
     async def _get_signal_names(self) -> list[str]:
         """Fetch the list of signal names for the SSE stream. Uses a cache after the first successful fetch."""

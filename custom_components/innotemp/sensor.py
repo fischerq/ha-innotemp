@@ -198,11 +198,21 @@ class InnotempSensor(InnotempCoordinatorEntity, SensorEntity):
         param_id = self._param_data.get("var")
         original_label = self._param_data.get("label", f"Sensor {param_id}")
         cleaned_label = strip_html(original_label)
+        room_id_var = room_attributes.get("var", "NO_ROOM_ID")
+        component_id = component_attributes.get("var") or component_attributes.get(
+            "type", "NO_COMP_ID"
+        )
+
+        new_label = (
+            f"{room_id_var} - {component_id} - {cleaned_label}"
+            if cleaned_label
+            else f"{room_id_var} - {component_id} - Sensor {param_id}"
+        )
 
         # entity_config for InnotempCoordinatorEntity expects 'param' for unique_id part
         entity_config = {
             "param": param_id,
-            "label": cleaned_label if cleaned_label else f"Sensor {param_id}",
+            "label": new_label,
         }
         super().__init__(coordinator, config_entry, entity_config)
 
@@ -321,13 +331,23 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
 
         original_label = self._param_data.get("label", f"Status {self._param_id}")
         cleaned_label = strip_html(original_label)
+        room_id_var = room_attributes.get("var", "NO_ROOM_ID")
+        component_id = component_attributes.get("var") or component_attributes.get(
+            "type", "NO_COMP_ID"
+        )
+
+        new_label = (
+            f"{room_id_var} - {component_id} - {cleaned_label} Status"
+            if cleaned_label
+            else f"{room_id_var} - {component_id} - Status {self._param_id}"
+        )
 
         # Modify label/param for unique ID within InnotempCoordinatorEntity
         # Append '_status' to the param_id for the superclass to create a unique entity ID
         # The label should also reflect it's a status/enum sensor
         entity_config = {
             "param": f"{self._param_id}_status",  # Ensures unique_id is different from the select entity
-            "label": f"{cleaned_label} Status",
+            "label": new_label,
         }
         super().__init__(coordinator, config_entry, entity_config)
 
@@ -393,10 +413,20 @@ class InnotempOnOffSensor(InnotempCoordinatorEntity, SensorEntity):
 
         original_label = self._param_data.get("label", f"State {self._param_id}")
         cleaned_label = strip_html(original_label)
+        room_id_var = room_attributes.get("var", "NO_ROOM_ID")
+        component_id = component_attributes.get("var") or component_attributes.get(
+            "type", "NO_COMP_ID"
+        )
+
+        new_label = (
+            f"{room_id_var} - {component_id} - {cleaned_label}"
+            if cleaned_label
+            else f"{room_id_var} - {component_id} - State {self._param_id}"
+        )
 
         entity_config = {
             "param": f"{self._param_id}_onoff_status",  # Ensures unique_id
-            "label": cleaned_label,
+            "label": new_label,
         }
         super().__init__(coordinator, config_entry, entity_config)
 
@@ -454,13 +484,23 @@ class InnotempDynamicEnumSensor(InnotempCoordinatorEntity, SensorEntity):
 
         original_label = self._param_data.get("label", f"Setting {self._param_id}")
         cleaned_label = strip_html(original_label)
+        room_id_var = room_attributes.get("var", "NO_ROOM_ID")
+        component_id = component_attributes.get("var") or component_attributes.get(
+            "type", "NO_COMP_ID"
+        )
+
+        new_label = (
+            f"{room_id_var} - {component_id} - {cleaned_label}"
+            if cleaned_label
+            else f"{room_id_var} - {component_id} - Setting {self._param_id}"
+        )
 
         # Append '_setting' or similar to param_id for unique entity ID if it might clash
         # with other entities (e.g. a select entity if this is also controllable)
         # For now, assume it's a read-only sensor state.
         entity_config = {
             "param": f"{self._param_id}_dynenum",  # Ensure unique_id
-            "label": cleaned_label,  # Label it clearly
+            "label": new_label,  # Label it clearly
         }
         super().__init__(coordinator, config_entry, entity_config)
 

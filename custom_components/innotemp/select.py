@@ -160,10 +160,20 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
 
         original_label = self._param_data.get("label", f"Control {self._param_id}")
         cleaned_label = strip_html(original_label)
+        room_id_var = room_attributes.get("var", "NO_ROOM_ID")
+        component_id = component_attributes.get("var") or component_attributes.get(
+            "type", "NO_COMP_ID"
+        )
+
+        new_label = (
+            f"{room_id_var} - {component_id} - {cleaned_label}"
+            if cleaned_label
+            else f"{room_id_var} - {component_id} - Control {self._param_id}"
+        )
 
         entity_config = {
             "param": self._param_id,  # Used for unique_id part by parent
-            "label": cleaned_label if cleaned_label else f"Control {self._param_id}",
+            "label": new_label,
         }
         super().__init__(coordinator, config_entry, entity_config)
 
@@ -206,34 +216,29 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
 
         new_api_value = ONOFFAUTO_OPTION_TO_API_VALUE[option]
         previous_api_value: Any | None = None
-        prev_val_source_info = "no source"
 
-        # New robust method: Use the control-to-state map from the coordinator
+        # Get the last known value
         state_var = self.coordinator.control_to_state_map.get(self._param_id)
+        if state_var and self.coordinator.data:
+            previous_api_value = self.coordinator.data.get(state_var)
 
-        if state_var:
-            if self.coordinator.data:
-                previous_api_value = self.coordinator.data.get(state_var)
-                prev_val_source_info = f"coordinator data for mapped state_var '{state_var}'"
-                if previous_api_value is None:
-                    _LOGGER.warning(
-                        f"Found mapping from control '{self._param_id}' to state '{state_var}', "
-                        f"but state_var was not found in the coordinator data."
-                    )
-            else:
-                _LOGGER.warning(
-                    "Coordinator data is not available to retrieve previous value."
-                )
-        else:
-            _LOGGER.warning(
-                f"No state_var mapping found for control '{self._param_id}'. "
-                f"Cannot determine previous value. Proceeding with prev_val as None (will be sent as empty string to API)."
-            )
-            # No fallback to self.current_option, as it's unreliable and this new method is designed to be the source of truth.
+        # Build the list of previous values to try
+        val_prev_options = []
+        if previous_api_value is not None:
+            val_prev_options.append(previous_api_value)
+
+        # Add all possible enum values, ensuring the last known is first.
+        for val in ONOFFAUTO_OPTION_TO_API_VALUE.values():
+            if val not in val_prev_options:
+                val_prev_options.append(val)
+
+        # Finally, add None as a fallback, which will be sent as an empty string
+        if None not in val_prev_options:
+            val_prev_options.append(None)
 
         _LOGGER.debug(
             f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
-            f"new_val {new_api_value} (from option '{option}'), prev_val {previous_api_value} (derived from {prev_val_source_info})"
+            f"new_val {new_api_value} (from option '{option}'), prev_val_options {val_prev_options}"
         )
 
         try:
@@ -241,7 +246,7 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
                 room_id=self._numeric_api_room_id,
                 param=self._param_id,
                 val_new=new_api_value,
-                val_prev=previous_api_value,
+                val_prev_options=val_prev_options,
             )
             if success:
                 _LOGGER.info(
