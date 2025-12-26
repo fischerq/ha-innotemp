@@ -12,7 +12,7 @@ from .coordinator import InnotempDataUpdateCoordinator
 from .const import DOMAIN
 from .api_parser import extract_initial_states, create_control_state_map
 
-PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT, Platform.NUMBER]
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SELECT, Platform.NUMBER, Platform.SWITCH]
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.setLevel(logging.WARNING)  # Changed logger level to warning

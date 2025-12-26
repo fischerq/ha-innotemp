@@ -26,7 +26,7 @@ def _is_potential_number_entity(item_data: Dict[str, Any]) -> bool:
     # access = item_data.get("access", "user") # Could be used later if needed
 
     if not (
-        param_id and unit and unit != "ONOFFAUTO"
+        param_id and unit and unit != "ONOFFAUTO" and unit != "ONOFF"
     ):  # and access in ["user", "admin"]
         return False
 
