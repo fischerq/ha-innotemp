@@ -207,22 +207,35 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
         # Let's use strict "0" and "1" as they are standard Innotemp boolean values.
         val_new = target_value_str
 
-        # Previous value handling
+        # Previous value handling.
+        #
+        # The controller uses ``val_prev`` for optimistic locking: a command is
+        # only applied when ``val_prev`` matches the parameter's *current* value.
+        # The current value must be read from the same var the entity displays
+        # (its own ``param_id``), exactly as ``is_on`` does. Previously this read
+        # the *mapped state var* from ``control_to_state_map`` which is a
+        # different (and often unpopulated) signal, so the first ``val_prev`` sent
+        # was a wrong guess and the device silently ignored the change.
         previous_api_value: Any | None = None
-        state_var = self.coordinator.control_to_state_map.get(self._param_id)
-        if state_var and self.coordinator.data:
-            previous_api_value = self.coordinator.data.get(state_var)
+        if self.coordinator.data:
+            previous_api_value = self.coordinator.data.get(self._param_id)
+            if previous_api_value is None:
+                # Fall back to the mapped state var if the control var is not
+                # present in the live data for some reason.
+                state_var = self.coordinator.control_to_state_map.get(self._param_id)
+                if state_var:
+                    previous_api_value = self.coordinator.data.get(state_var)
 
-        val_prev_options = []
+        val_prev_options: list[Any] = []
         if previous_api_value is not None:
-            val_prev_options.append(previous_api_value)
+            # Normalise to a clean "0"/"1" so the very first attempt carries the
+            # correct previous value (SSE may deliver "1.0", 1, etc.).
+            val_prev_options.append(
+                "1" if str(previous_api_value) in ("1", "1.0") else "0"
+            )
 
-        # Add the opposite value as a fallback option for prev value
-        # If we are turning ON, current state might be OFF ("0").
-        # If we are turning OFF, current state might be ON ("1").
-        # But we should also include both just in case.
-        possible_values = ["0", "1"]
-        for val in possible_values:
+        # Fallbacks: try both boolean states, then an empty val_prev.
+        for val in ("0", "1"):
             if val not in val_prev_options:
                 val_prev_options.append(val)
 
@@ -245,6 +258,13 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
                 _LOGGER.info(
                     f"Successfully sent command for {self.entity_id} to turn {'ON' if turn_on else 'OFF'}."
                 )
+                # Optimistically reflect the new state immediately. The SSE
+                # stream only republishes values periodically, and a plain
+                # refresh re-emits the (unchanged) cached data, which would make
+                # the toggle snap back to its old position.
+                if self.coordinator.data is not None:
+                    self.coordinator.data[self._param_id] = val_new
+                self.async_write_ha_state()
                 await self.coordinator.async_request_refresh()
             else:
                 _LOGGER.error(
