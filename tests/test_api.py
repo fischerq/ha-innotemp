@@ -15,6 +15,9 @@ def mock_client_session():
     session = MagicMock(spec=ClientSession)
     session.post = MagicMock()
     session.get = MagicMock()
+    # ``_api_request`` (used by send_command, get_config, ...) goes through
+    # ``session.request``; only ``async_login`` uses ``session.post`` directly.
+    session.request = MagicMock()
     return session
 
 
@@ -85,15 +88,15 @@ async def test_send_command_success(mock_client_session):
 
     async_context_manager = AsyncMock()
     async_context_manager.__aenter__.return_value = mock_response
-    mock_client_session.post.return_value = async_context_manager
-
+    # send_command issues the request via ``session.request``.
+    mock_client_session.request.return_value = async_context_manager
 
     success = await client.async_send_command(
         room_id=1, param="p1", val_new="10", val_prev_options=["5"]
     )
 
     assert success is True
-    mock_client_session.post.assert_called_once()
+    mock_client_session.request.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -122,24 +125,25 @@ async def test_retry_on_auth_error(mock_client_session):
     mock_command_success_response = MagicMock()
     mock_command_success_response.status = 200
     json_payload = {"info": "success_non_json"}
-    mock_command_success_response.json = AsyncMock(
-        return_value=json_payload
-    )
+    mock_command_success_response.json = AsyncMock(return_value=json_payload)
     mock_command_success_response.text = AsyncMock(
         return_value=json.dumps(json_payload)
     )
     cm_command_success = AsyncMock()
     cm_command_success.__aenter__.return_value = mock_command_success_response
 
-    mock_client_session.post.side_effect = [
+    # The command + retry go through ``session.request`` (redirect, then the
+    # successful retry); the re-login in between goes through ``session.post``.
+    mock_client_session.request.side_effect = [
         cm_redirect,
-        cm_login,
         cm_command_success,
     ]
+    mock_client_session.post.return_value = cm_login
 
     success = await client.async_send_command(
         room_id=1, param="p1", val_new="10", val_prev_options=["5"]
     )
 
     assert success is True
-    assert mock_client_session.post.call_count == 3
+    assert mock_client_session.request.call_count == 2
+    assert mock_client_session.post.call_count == 1

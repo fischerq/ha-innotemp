@@ -189,7 +189,7 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
 
     async def _send_switch_command(self, turn_on: bool) -> None:
         """Helper to send the turn on/off command."""
-        target_value_str = "1" if turn_on else "0" # "1" for On, "0" for Off
+        target_value_str = "1" if turn_on else "0"  # "1" for On, "0" for Off
 
         # We need the API value (often the same as what we deduced)
         # Assuming ONOFF_OPTION_TO_API_VALUE maps "On" -> "1", "Off" -> "0"

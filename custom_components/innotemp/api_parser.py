@@ -179,7 +179,9 @@ def create_control_state_map(config_data: Dict[str, Any]) -> Dict[str, str]:
                     continue  # We need both to make a pair
 
                 # Normalize entries and inputs to lists
-                entries = entries_raw if isinstance(entries_raw, list) else [entries_raw]
+                entries = (
+                    entries_raw if isinstance(entries_raw, list) else [entries_raw]
+                )
                 inputs = inputs_raw if isinstance(inputs_raw, list) else [inputs_raw]
 
                 # Create a lookup map for inputs based on their label
@@ -215,7 +217,9 @@ def create_control_state_map(config_data: Dict[str, Any]) -> Dict[str, str]:
                                 "Mapped control '%s' to state '%s' in component '%s' (Room: %s) using label: '%s'",
                                 control_var,
                                 state_var,
-                                component.get("@attributes", {}).get("type", container_key),
+                                component.get("@attributes", {}).get(
+                                    "type", container_key
+                                ),
                                 room_var,
                                 control_label,
                             )
@@ -513,6 +517,7 @@ def extract_initial_states(config_data_full: dict) -> dict:
 
     _LOGGER.info(f"Extracted {len(initial_states)} initial states for the coordinator.")
     return initial_states
+
 
 # def _example_sensor_item_processor(
 #     item_data: Dict[str, Any],
