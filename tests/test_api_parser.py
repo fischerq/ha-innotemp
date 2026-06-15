@@ -39,7 +39,11 @@ def test_create_control_state_map():
                 "mixer": {
                     "@attributes": {"type": "mixer001", "label": "Main Mixer"},
                     "entry": [
-                        {"var": "control_mixer_1", "label": "Mischer 1", "unit": "VAR:"},
+                        {
+                            "var": "control_mixer_1",
+                            "label": "Mischer 1",
+                            "unit": "VAR:",
+                        },
                         {
                             "var": "control_mixer_2",
                             "label": "Unmatched Mischer",
@@ -123,7 +127,11 @@ def test_create_control_state_map():
             {
                 "@attributes": {"type": "room003", "var": "R3"},
                 "display": {
-                    "input": {"var": "some_display_var", "label": "Display", "unit": "W"}
+                    "input": {
+                        "var": "some_display_var",
+                        "label": "Display",
+                        "unit": "W",
+                    }
                 },
             },
         ]
@@ -224,14 +232,14 @@ def test_strip_html(input_text: Optional[str], expected_output: str):
         ("VAR::", None),  # Empty content
         ("VAR:InvalidFormat:", None),  # Part doesn't match pattern
         ("VAR:NoVal():", None),  # Part doesn't match pattern (empty value)
+        (
+            "VAR:NoName(val):",
             (
-                "VAR:NoName(val):",
-                (
-                    {"val": "NoName"},
-                    {"NoName": "val"},
-                    ["NoName"],
-                ),
-            ),  # This is actually valid, the test was wrong
+                {"val": "NoName"},
+                {"NoName": "val"},
+                ["NoName"],
+            ),
+        ),  # This is actually valid, the test was wrong
         ("VAR:NoBrackets:", None),  # Part doesn't match pattern
         ("VAR:One(1)Two(2):", None),  # Invalid part format (no colon separator)
         (
@@ -387,8 +395,7 @@ def mock_select_processor(
         ),
         # 4. JSON string for room list
         (
-            {
-                "roomlist_json": """
+            {"roomlist_json": """
                     [
                         {
                             "@attributes": {"type": "room002", "var": "ROOM_B_VAR", "label": "Room B"},
@@ -398,8 +405,7 @@ def mock_select_processor(
                             }
                         }
                     ]
-                """
-            },
+                """},
             ["display"],  # Container key for this test
             mock_item_processor,
             1,
