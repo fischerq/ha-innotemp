@@ -14,7 +14,7 @@ from homeassistant.const import UnitOfTemperature, PERCENTAGE  # For units
 
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
-from .api_parser import strip_html, process_room_config_data
+from .api_parser import strip_html, process_room_config_data, extract_numeric_room_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -191,7 +191,17 @@ class InnotempNumber(InnotempCoordinatorEntity, NumberEntity):
         }
         super().__init__(coordinator, config_entry, entity_config)
 
-        self._api_room_id = room_attributes.get("var")  # For API calls
+        # The value.save.php endpoint expects the *numeric* room id (e.g. 3),
+        # not the room's string ``var`` (e.g. "room3_param1"). Sending the var
+        # caused every number write to be rejected by the controller.
+        self._api_room_id = extract_numeric_room_id(room_attributes)
+        if self._api_room_id is None:
+            _LOGGER.warning(
+                "InnotempNumber %s: could not determine numeric room id from %s; "
+                "value changes may be rejected by the controller.",
+                self._param_id,
+                room_attributes,
+            )
         self._attr_native_unit_of_measurement = self._param_data.get("unit")
 
         # Set device class and default min/max/step based on unit
@@ -273,6 +283,11 @@ class InnotempNumber(InnotempCoordinatorEntity, NumberEntity):
                 _LOGGER.info(
                     f"Successfully sent command for {self.entity_id} to set value to {value}."
                 )
+                # Optimistically reflect the new value immediately so the UI does
+                # not snap back while waiting for the next SSE push.
+                if self.coordinator.data is not None:
+                    self.coordinator.data[self._param_id] = value
+                self.async_write_ha_state()
                 await self.coordinator.async_request_refresh()
             else:
                 _LOGGER.error(

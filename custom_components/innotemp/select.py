@@ -217,15 +217,27 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
         new_api_value = ONOFFAUTO_OPTION_TO_API_VALUE[option]
         previous_api_value: Any | None = None
 
-        # Get the last known value
-        state_var = self.coordinator.control_to_state_map.get(self._param_id)
-        if state_var and self.coordinator.data:
-            previous_api_value = self.coordinator.data.get(state_var)
+        # Get the last known value. The controller validates ``val_prev`` against
+        # the parameter's *current* value (optimistic locking), so it must be read
+        # from this entity's own ``param_id`` -- the same var ``current_option``
+        # displays. Previously this used the *mapped state var* from
+        # ``control_to_state_map``, a different (and often empty) signal, so the
+        # first ``val_prev`` was wrong and the change was silently dropped.
+        if self.coordinator.data:
+            previous_api_value = self.coordinator.data.get(self._param_id)
+            if previous_api_value is None:
+                state_var = self.coordinator.control_to_state_map.get(self._param_id)
+                if state_var:
+                    previous_api_value = self.coordinator.data.get(state_var)
 
-        # Build the list of previous values to try
+        # Build the list of previous values to try, normalising the current value
+        # to its integer API form so the first attempt carries the correct prev.
         val_prev_options = []
         if previous_api_value is not None:
-            val_prev_options.append(previous_api_value)
+            try:
+                val_prev_options.append(int(previous_api_value))
+            except (ValueError, TypeError):
+                val_prev_options.append(previous_api_value)
 
         # Add all possible enum values, ensuring the last known is first.
         for val in ONOFFAUTO_OPTION_TO_API_VALUE.values():
@@ -252,6 +264,11 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
                 _LOGGER.info(
                     f"Successfully sent command for {self.entity_id} to set option to '{option}'."
                 )
+                # Optimistically reflect the new option immediately so the UI does
+                # not snap back while waiting for the next SSE push.
+                if self.coordinator.data is not None:
+                    self.coordinator.data[self._param_id] = new_api_value
+                self.async_write_ha_state()
                 await self.coordinator.async_request_refresh()
             else:
                 _LOGGER.error(
