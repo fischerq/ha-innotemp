@@ -43,7 +43,9 @@ class InnotempApiClient:
             username,
         )
 
-    def _sanitize_data_for_log(self, data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _sanitize_data_for_log(
+        self, data: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
         """Return a copy of data with password masked for logging."""
         if data is None:
             return None
@@ -65,7 +67,11 @@ class InnotempApiClient:
         log_data = self._sanitize_data_for_log(data)
         _LOGGER.debug(
             "[innotemp] >>> %s %s | data=%s | attempt=%d | logged_in=%s",
-            method, url, log_data, attempt, self._is_logged_in,
+            method,
+            url,
+            log_data,
+            attempt,
+            self._is_logged_in,
         )
         try:
             async with self._session.request(
@@ -76,19 +82,26 @@ class InnotempApiClient:
                 _LOGGER.debug(
                     "[innotemp] <<< %s %s | status=%s | content_type=%s | "
                     "elapsed=%.0fms | headers=%s",
-                    method, url, response.status,
-                    response.content_type, elapsed, dict(response.headers),
+                    method,
+                    url,
+                    response.status,
+                    response.content_type,
+                    elapsed,
+                    dict(response.headers),
                 )
                 _LOGGER.debug(
                     "[innotemp] <<< %s %s | body=%s",
-                    method, url, response_text,
+                    method,
+                    url,
+                    response_text,
                 )
 
                 if response.status in [301, 302]:
                     location = response.headers.get("Location", "unknown")
                     _LOGGER.warning(
                         "[innotemp] Redirect %s -> %s (session likely expired)",
-                        url, location,
+                        url,
+                        location,
                     )
                     raise InnotempAuthError(
                         f"Request to {url} was redirected to {location}, session likely expired."
@@ -109,7 +122,8 @@ class InnotempApiClient:
                     ):
                         _LOGGER.warning(
                             "[innotemp] Access denied for %s: %s",
-                            endpoint, json_response,
+                            endpoint,
+                            json_response,
                         )
                         raise InnotempAuthError(
                             f"Access denied by API payload for {endpoint}: {json_response}"
@@ -118,7 +132,8 @@ class InnotempApiClient:
                 except json.JSONDecodeError:
                     _LOGGER.warning(
                         "[innotemp] Non-JSON response from %s: %s",
-                        endpoint, response_text[:500],
+                        endpoint,
+                        response_text[:500],
                     )
                     return {"info": "success_non_json"}
 
@@ -126,7 +141,11 @@ class InnotempApiClient:
             elapsed = (time.monotonic() - t_start) * 1000
             _LOGGER.error(
                 "[innotemp] HTTP error for %s %s: status=%s, message=%s, elapsed=%.0fms",
-                method, url, e.status, e.message, elapsed,
+                method,
+                url,
+                e.status,
+                e.message,
+                elapsed,
             )
             if e.status in [401, 403]:
                 raise InnotempAuthError(
@@ -138,7 +157,11 @@ class InnotempApiClient:
             elapsed = (time.monotonic() - t_start) * 1000
             _LOGGER.error(
                 "[innotemp] Connection error for %s %s: %s (type=%s, elapsed=%.0fms)",
-                method, url, e, type(e).__name__, elapsed,
+                method,
+                url,
+                e,
+                type(e).__name__,
+                elapsed,
             )
             raise InnotempApiError(f"Connection error for {endpoint}: {e}") from e
 
@@ -150,14 +173,17 @@ class InnotempApiClient:
             if not self._is_logged_in:
                 _LOGGER.debug(
                     "[innotemp] Not logged in before %s %s, logging in first",
-                    method, endpoint,
+                    method,
+                    endpoint,
                 )
                 await self.async_login()
             return await self._api_request(method, endpoint, data)
         except InnotempAuthError as e:
             _LOGGER.info(
                 "[innotemp] Auth error for %s %s (%s), re-login and retry",
-                method, endpoint, e,
+                method,
+                endpoint,
+                e,
             )
             await self.async_login()
             return await self._api_request(method, endpoint, data)
@@ -169,13 +195,17 @@ class InnotempApiClient:
         url = f"{self._base_url}/groups.read.php"
 
         _LOGGER.info(
-            "[innotemp] Login attempt: url=%s, username=%s", url, self._username,
+            "[innotemp] Login attempt: url=%s, username=%s",
+            url,
+            self._username,
         )
         t_start = time.monotonic()
 
         try:
             async with self._session.post(
-                url, data=login_data, allow_redirects=False,
+                url,
+                data=login_data,
+                allow_redirects=False,
             ) as response:
                 elapsed = (time.monotonic() - t_start) * 1000
                 response_text = await response.text()
@@ -183,11 +213,14 @@ class InnotempApiClient:
                 _LOGGER.debug(
                     "[innotemp] Login response: status=%s, content_type=%s, "
                     "elapsed=%.0fms, headers=%s",
-                    response.status, response.content_type,
-                    elapsed, dict(response.headers),
+                    response.status,
+                    response.content_type,
+                    elapsed,
+                    dict(response.headers),
                 )
                 _LOGGER.debug(
-                    "[innotemp] Login response body: %s", response_text[:2000],
+                    "[innotemp] Login response body: %s",
+                    response_text[:2000],
                 )
 
                 if response.status in [301, 302]:
@@ -195,7 +228,8 @@ class InnotempApiClient:
                     _LOGGER.error(
                         "[innotemp] Login redirected: %s -> %s "
                         "(device may require HTTPS or different path)",
-                        url, location,
+                        url,
+                        location,
                     )
                     raise InnotempAuthError(
                         f"Login redirected to {location} — check host address"
@@ -204,7 +238,8 @@ class InnotempApiClient:
                 if response.status != 200:
                     _LOGGER.error(
                         "[innotemp] Login HTTP error: status=%s, body=%s",
-                        response.status, response_text[:500],
+                        response.status,
+                        response_text[:500],
                     )
                     response.raise_for_status()
 
@@ -220,21 +255,28 @@ class InnotempApiClient:
                     _LOGGER.error(
                         "[innotemp] Login response is not valid JSON: "
                         "error=%s, body=%s",
-                        je, response_text[:500],
+                        je,
+                        response_text[:500],
                     )
                     raise InnotempAuthError(
                         f"Login failed: response is not JSON: {response_text[:200]}"
                     ) from je
 
                 _LOGGER.debug(
-                    "[innotemp] Login parsed response: %s", json_response,
+                    "[innotemp] Login parsed response: %s",
+                    json_response,
                 )
 
-                info = json_response.get("info") if isinstance(json_response, dict) else None
+                info = (
+                    json_response.get("info")
+                    if isinstance(json_response, dict)
+                    else None
+                )
 
                 if info == "success":
                     _LOGGER.info(
-                        "[innotemp] Login successful (%.0fms)", elapsed,
+                        "[innotemp] Login successful (%.0fms)",
+                        elapsed,
                     )
                     self._is_logged_in = True
                     return
@@ -253,7 +295,9 @@ class InnotempApiClient:
             elapsed = (time.monotonic() - t_start) * 1000
             _LOGGER.error(
                 "[innotemp] Login connection error: %s (type=%s, elapsed=%.0fms)",
-                e, type(e).__name__, elapsed,
+                e,
+                type(e).__name__,
+                elapsed,
             )
             raise InnotempAuthError(
                 f"Login connection failed: {type(e).__name__}: {e}"
@@ -262,7 +306,9 @@ class InnotempApiClient:
             elapsed = (time.monotonic() - t_start) * 1000
             _LOGGER.error(
                 "[innotemp] Login unexpected error: %s (type=%s, elapsed=%.0fms)",
-                e, type(e).__name__, elapsed,
+                e,
+                type(e).__name__,
+                elapsed,
             )
             raise InnotempAuthError(
                 f"Login failed unexpectedly: {type(e).__name__}: {e}"
@@ -292,7 +338,10 @@ class InnotempApiClient:
         _LOGGER.info(
             "[innotemp] Sending command: room_id=%s, param=%s, val_new=%s, "
             "val_prev_options=%s",
-            room_id, param, val_new, val_prev_options,
+            room_id,
+            param,
+            val_new,
+            val_prev_options,
         )
         for i, val_prev in enumerate(val_prev_options):
             command_data = {
@@ -310,7 +359,12 @@ class InnotempApiClient:
             _LOGGER.debug(
                 "[innotemp] Command attempt %d/%d: room=%s, param=%s, "
                 "new=%s, prev=%s",
-                i + 1, len(val_prev_options), room_id, param, val_new, val_prev,
+                i + 1,
+                len(val_prev_options),
+                room_id,
+                param,
+                val_new,
+                val_prev,
             )
 
             try:
@@ -321,29 +375,41 @@ class InnotempApiClient:
                     _LOGGER.info(
                         "[innotemp] Command success: room=%s, param=%s, "
                         "new=%s, prev=%s, response=%s",
-                        room_id, param, val_new, val_prev, result,
+                        room_id,
+                        param,
+                        val_new,
+                        val_prev,
+                        result,
                     )
                     return True
                 else:
                     _LOGGER.warning(
                         "[innotemp] Command rejected: room=%s, param=%s, "
                         "prev=%s, response=%s",
-                        room_id, param, val_prev, result,
+                        room_id,
+                        param,
+                        val_prev,
+                        result,
                     )
             except InnotempAuthError as e:
                 _LOGGER.error(
-                    "[innotemp] Command auth error (aborting): %s", e,
+                    "[innotemp] Command auth error (aborting): %s",
+                    e,
                 )
                 raise
             except InnotempApiError as e:
                 _LOGGER.error(
-                    "[innotemp] Command API error (trying next prev): %s", e,
+                    "[innotemp] Command API error (trying next prev): %s",
+                    e,
                 )
 
         _LOGGER.error(
             "[innotemp] Command failed all attempts: room=%s, param=%s, "
             "val_new=%s, tried prev_values=%s",
-            room_id, param, val_new, val_prev_options,
+            room_id,
+            param,
+            val_new,
+            val_prev_options,
         )
         return False
 
@@ -368,14 +434,16 @@ class InnotempApiClient:
 
             _LOGGER.info(
                 "[innotemp] Fetched %d signal names: %s",
-                len(response), response,
+                len(response),
+                response,
             )
             self._signal_names_cache = response
             return response
 
         _LOGGER.error(
             "[innotemp] Signal names response not a list: type=%s, value=%s",
-            type(response).__name__, response,
+            type(response).__name__,
+            response,
         )
         self._signal_names_cache = None
         raise InnotempApiError(
@@ -397,7 +465,8 @@ class InnotempApiClient:
                 reconnect_count += 1
                 msg_count = 0
                 _LOGGER.info(
-                    "[innotemp] SSE listener starting (attempt #%d)", reconnect_count,
+                    "[innotemp] SSE listener starting (attempt #%d)",
+                    reconnect_count,
                 )
                 try:
                     if not self._is_logged_in:
@@ -413,13 +482,15 @@ class InnotempApiClient:
                     sse_url = f"{self._base_url}/live_signal.read.SSE.php"
                     _LOGGER.info(
                         "[innotemp] SSE connecting: url=%s, signals=%d",
-                        sse_url, len(signal_names),
+                        sse_url,
+                        len(signal_names),
                     )
 
                     async with self._session.get(sse_url) as response:
                         _LOGGER.debug(
                             "[innotemp] SSE connected: status=%s, headers=%s",
-                            response.status, dict(response.headers),
+                            response.status,
+                            dict(response.headers),
                         )
                         response.raise_for_status()
                         async for line in response.content:
@@ -431,21 +502,25 @@ class InnotempApiClient:
                                 data_list = json.loads(data_str)
                                 if isinstance(data_list, list):
                                     _LOGGER.debug(
-                                        "[innotemp] SSE msg #%d: %s", msg_count, data_list,
+                                        "[innotemp] SSE msg #%d: %s",
+                                        msg_count,
+                                        data_list,
                                     )
 
                                     if len(data_list) != len(signal_names):
                                         _LOGGER.error(
                                             "[innotemp] SSE length mismatch: "
                                             "expected %d signals, got %d values",
-                                            len(signal_names), len(data_list),
+                                            len(signal_names),
+                                            len(data_list),
                                         )
                                         self._signal_names_cache = None
                                         continue
 
                                     processed_data = dict(zip(signal_names, data_list))
                                     _LOGGER.debug(
-                                        "[innotemp] SSE processed: %s", processed_data,
+                                        "[innotemp] SSE processed: %s",
+                                        processed_data,
                                     )
 
                                     if callback is None:
@@ -459,12 +534,14 @@ class InnotempApiClient:
                                         callback(processed_data)
                                 else:
                                     _LOGGER.warning(
-                                        "[innotemp] SSE non-list data: %s", data_list,
+                                        "[innotemp] SSE non-list data: %s",
+                                        data_list,
                                     )
                             except (json.JSONDecodeError, IndexError) as e:
                                 _LOGGER.warning(
                                     "[innotemp] SSE parse error: %s, line=%s",
-                                    e, line[:200],
+                                    e,
+                                    line[:200],
                                 )
 
                 except InnotempApiError as e:
@@ -472,12 +549,14 @@ class InnotempApiClient:
                 except aiohttp.ClientError as e:
                     _LOGGER.error(
                         "[innotemp] SSE connection error (type=%s), retry in 30s: %s",
-                        type(e).__name__, e,
+                        type(e).__name__,
+                        e,
                     )
                     self._is_logged_in = False
                 except Exception as e:
                     _LOGGER.exception(
-                        "[innotemp] SSE unexpected error, retry in 30s: %s", e,
+                        "[innotemp] SSE unexpected error, retry in 30s: %s",
+                        e,
                     )
                     self._is_logged_in = False
 

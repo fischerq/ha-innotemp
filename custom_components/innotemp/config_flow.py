@@ -55,7 +55,8 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             username = user_input["username"]
             _LOGGER.info(
                 "[innotemp] Config flow: attempting login to host=%s, username=%s",
-                host, username,
+                host,
+                username,
             )
             session = async_get_clientsession(self.hass)
             api_client = InnotempApiClient(
@@ -73,7 +74,8 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception as ex:
                 _LOGGER.error(
                     "[innotemp] Config flow: login failed: %s (type=%s)",
-                    ex, type(ex).__name__,
+                    ex,
+                    type(ex).__name__,
                 )
                 errors["base"] = "cannot_connect"
                 return self.async_show_form(
