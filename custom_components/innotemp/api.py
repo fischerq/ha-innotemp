@@ -2,14 +2,13 @@ import aiohttp
 import asyncio
 import json
 import logging
+import time
 from typing import Callable, Awaitable, Dict, Any, Optional
 
-# Standard logger for Home Assistant components
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.WARNING)  # Changed logger level to debug
+_LOGGER.setLevel(logging.DEBUG)
 
 
-# Custom exceptions for better error handling
 class InnotempApiError(Exception):
     """Generic Innotemp API error."""
 
@@ -37,6 +36,21 @@ class InnotempApiClient:
         self._sse_task: Optional[asyncio.Task] = None
         self._is_logged_in = False
         self._signal_names_cache: Optional[list[str]] = None
+        _LOGGER.debug(
+            "InnotempApiClient initialized: host=%s, base_url=%s, username=%s",
+            host,
+            self._base_url,
+            username,
+        )
+
+    def _sanitize_data_for_log(self, data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Return a copy of data with password masked for logging."""
+        if data is None:
+            return None
+        sanitized = dict(data)
+        if "pw" in sanitized:
+            sanitized["pw"] = "***"
+        return sanitized
 
     async def _api_request(
         self,
@@ -47,44 +61,55 @@ class InnotempApiClient:
     ) -> Dict[str, Any]:
         """Wrap API requests to handle session timeouts and errors."""
         url = f"{self._base_url}/{endpoint}"
+        t_start = time.monotonic()
+        log_data = self._sanitize_data_for_log(data)
+        _LOGGER.debug(
+            "[innotemp] >>> %s %s | data=%s | attempt=%d | logged_in=%s",
+            method, url, log_data, attempt, self._is_logged_in,
+        )
         try:
-            # Use allow_redirects=False to prevent POST data from being lost on redirects
-            _LOGGER.debug("Sending %s request to %s with data: %s", method, url, data)
             async with self._session.request(
                 method, url, data=data, allow_redirects=False
             ) as response:
+                elapsed = (time.monotonic() - t_start) * 1000
+                response_text = await response.text()
                 _LOGGER.debug(
-                    "Received response from %s: Status %s, Headers: %s",
-                    url,
-                    response.status,
-                    response.headers,
+                    "[innotemp] <<< %s %s | status=%s | content_type=%s | "
+                    "elapsed=%.0fms | headers=%s",
+                    method, url, response.status,
+                    response.content_type, elapsed, dict(response.headers),
+                )
+                _LOGGER.debug(
+                    "[innotemp] <<< %s %s | body=%s",
+                    method, url, response_text,
                 )
 
-                # Check for redirects which may indicate a session timeout
                 if response.status in [301, 302]:
+                    location = response.headers.get("Location", "unknown")
+                    _LOGGER.warning(
+                        "[innotemp] Redirect %s -> %s (session likely expired)",
+                        url, location,
+                    )
                     raise InnotempAuthError(
-                        "Request to %s was redirected, session likely expired.", url
+                        f"Request to {url} was redirected to {location}, session likely expired."
                     )
 
                 response.raise_for_status()
 
-                # The server sometimes sends JSON with a text/html content type, so we try to parse it regardless
-                response_text = await response.text()
                 if not response_text:
-                    return {}  # Return empty dict for empty responses
-                _LOGGER.debug("Response body from %s: %s", url, response_text)
+                    _LOGGER.debug("[innotemp] Empty response body from %s", url)
+                    return {}
 
                 try:
                     json_response = json.loads(response_text)
-                    # Check for application-level auth errors even with HTTP 200 OK
                     if (
                         isinstance(json_response, dict)
                         and json_response.get("info") == "error"
                         and json_response.get("error") == "Access denied."
                     ):
                         _LOGGER.warning(
-                            "Access denied by API for %s (payload error), attempting re-login.",
-                            endpoint,
+                            "[innotemp] Access denied for %s: %s",
+                            endpoint, json_response,
                         )
                         raise InnotempAuthError(
                             f"Access denied by API payload for {endpoint}: {json_response}"
@@ -92,24 +117,29 @@ class InnotempApiClient:
                     return json_response
                 except json.JSONDecodeError:
                     _LOGGER.warning(
-                        "Response from %s was not valid JSON: %s",
-                        endpoint,
-                        response_text,
+                        "[innotemp] Non-JSON response from %s: %s",
+                        endpoint, response_text[:500],
                     )
-                    # For some endpoints, a non-JSON response might still be a success indicator
                     return {"info": "success_non_json"}
 
         except aiohttp.ClientResponseError as e:
-            # Re-raise as our custom auth error for the retry logic
+            elapsed = (time.monotonic() - t_start) * 1000
+            _LOGGER.error(
+                "[innotemp] HTTP error for %s %s: status=%s, message=%s, elapsed=%.0fms",
+                method, url, e.status, e.message, elapsed,
+            )
             if e.status in [401, 403]:
                 raise InnotempAuthError(
                     f"Authorization error for {endpoint}: {e}"
                 ) from e
-            _LOGGER.error("API request to %s failed with status %s", endpoint, e.status)
             raise InnotempApiError(f"Request to {endpoint} failed: {e}") from e
 
         except aiohttp.ClientError as e:
-            _LOGGER.error("Connection error during API request to %s: %s", endpoint, e)
+            elapsed = (time.monotonic() - t_start) * 1000
+            _LOGGER.error(
+                "[innotemp] Connection error for %s %s: %s (type=%s, elapsed=%.0fms)",
+                method, url, e, type(e).__name__, elapsed,
+            )
             raise InnotempApiError(f"Connection error for {endpoint}: {e}") from e
 
     async def _execute_with_retry(
@@ -118,49 +148,129 @@ class InnotempApiClient:
         """Execute an API request with session refresh logic."""
         try:
             if not self._is_logged_in:
+                _LOGGER.debug(
+                    "[innotemp] Not logged in before %s %s, logging in first",
+                    method, endpoint,
+                )
                 await self.async_login()
             return await self._api_request(method, endpoint, data)
-        except InnotempAuthError:
-            _LOGGER.info("Session likely timed out, attempting to re-login and retry.")
-            await self.async_login()  # This will raise on failure
-            # Retry the request once after successful re-login
+        except InnotempAuthError as e:
+            _LOGGER.info(
+                "[innotemp] Auth error for %s %s (%s), re-login and retry",
+                method, endpoint, e,
+            )
+            await self.async_login()
             return await self._api_request(method, endpoint, data)
 
     async def async_login(self) -> None:
         """Log in to the controller and establish a session."""
         self._is_logged_in = False
         login_data = {"un": self._username, "pw": self._password}
-
-        # We don't use the wrapper here as this is the base authentication call
-        _LOGGER.debug("Attempting login to %s", self._base_url)
         url = f"{self._base_url}/groups.read.php"
-        try:
-            async with self._session.post(url, data=login_data) as response:
-                response.raise_for_status()
-                json_response = await response.json()
 
-                # *** FIX: Explicitly check for the "success" message in the response body ***
-                if json_response.get("info") == "success":
-                    _LOGGER.info("Successfully logged in to Innotemp controller.")
-                    self._is_logged_in = True
-                    _LOGGER.debug(
-                        "Login successful. Received response: %s", json_response
+        _LOGGER.info(
+            "[innotemp] Login attempt: url=%s, username=%s", url, self._username,
+        )
+        t_start = time.monotonic()
+
+        try:
+            async with self._session.post(
+                url, data=login_data, allow_redirects=False,
+            ) as response:
+                elapsed = (time.monotonic() - t_start) * 1000
+                response_text = await response.text()
+
+                _LOGGER.debug(
+                    "[innotemp] Login response: status=%s, content_type=%s, "
+                    "elapsed=%.0fms, headers=%s",
+                    response.status, response.content_type,
+                    elapsed, dict(response.headers),
+                )
+                _LOGGER.debug(
+                    "[innotemp] Login response body: %s", response_text[:2000],
+                )
+
+                if response.status in [301, 302]:
+                    location = response.headers.get("Location", "unknown")
+                    _LOGGER.error(
+                        "[innotemp] Login redirected: %s -> %s "
+                        "(device may require HTTPS or different path)",
+                        url, location,
                     )
+                    raise InnotempAuthError(
+                        f"Login redirected to {location} — check host address"
+                    )
+
+                if response.status != 200:
+                    _LOGGER.error(
+                        "[innotemp] Login HTTP error: status=%s, body=%s",
+                        response.status, response_text[:500],
+                    )
+                    response.raise_for_status()
+
+                if not response_text.strip():
+                    _LOGGER.error("[innotemp] Login returned empty response body")
+                    raise InnotempAuthError(
+                        "Login failed: server returned empty response"
+                    )
+
+                try:
+                    json_response = json.loads(response_text)
+                except json.JSONDecodeError as je:
+                    _LOGGER.error(
+                        "[innotemp] Login response is not valid JSON: "
+                        "error=%s, body=%s",
+                        je, response_text[:500],
+                    )
+                    raise InnotempAuthError(
+                        f"Login failed: response is not JSON: {response_text[:200]}"
+                    ) from je
+
+                _LOGGER.debug(
+                    "[innotemp] Login parsed response: %s", json_response,
+                )
+
+                info = json_response.get("info") if isinstance(json_response, dict) else None
+
+                if info == "success":
+                    _LOGGER.info(
+                        "[innotemp] Login successful (%.0fms)", elapsed,
+                    )
+                    self._is_logged_in = True
                     return
 
-                else:
-                    raise InnotempAuthError(
-                        f"Login failed: Server responded with info: {json_response.get('info')}"
-                    )
+                _LOGGER.error(
+                    "[innotemp] Login rejected by server: full_response=%s",
+                    json_response,
+                )
+                raise InnotempAuthError(
+                    f"Login failed: server responded with {json_response}"
+                )
 
-        except (aiohttp.ClientError, json.JSONDecodeError) as e:
-            _LOGGER.error("Login request failed: %s", e)
+        except InnotempAuthError:
+            raise
+        except aiohttp.ClientError as e:
+            elapsed = (time.monotonic() - t_start) * 1000
+            _LOGGER.error(
+                "[innotemp] Login connection error: %s (type=%s, elapsed=%.0fms)",
+                e, type(e).__name__, elapsed,
+            )
             raise InnotempAuthError(
-                "Login request failed, could not connect or parse response."
+                f"Login connection failed: {type(e).__name__}: {e}"
+            ) from e
+        except Exception as e:
+            elapsed = (time.monotonic() - t_start) * 1000
+            _LOGGER.error(
+                "[innotemp] Login unexpected error: %s (type=%s, elapsed=%.0fms)",
+                e, type(e).__name__, elapsed,
+            )
+            raise InnotempAuthError(
+                f"Login failed unexpectedly: {type(e).__name__}: {e}"
             ) from e
 
     async def async_get_config(self) -> Optional[Dict[str, Any]]:
         """Fetch the full configuration data."""
+        _LOGGER.info("[innotemp] Fetching configuration from roomconf.read.php")
         config_data = {
             "un": self._username,
             "pw": self._password,
@@ -170,18 +280,21 @@ class InnotempApiClient:
             "POST", "roomconf.read.php", data=config_data
         )
         if config:
-            _LOGGER.debug("Successfully fetched configuration: %s", config)
+            _LOGGER.debug("[innotemp] Configuration fetched: %s", config)
             return config
-        _LOGGER.error("Failed to fetch configuration. Received response: %s", config)
+        _LOGGER.error("[innotemp] Configuration fetch returned falsy: %s", config)
         return None
 
     async def async_send_command(
         self, room_id: int, param: str, val_new: Any, val_prev_options: list[Any]
     ) -> bool:
-        """
-        Send a command to change a parameter value, trying multiple previous values if needed.
-        """
-        for val_prev in val_prev_options:
+        """Send a command to change a parameter value, trying multiple previous values if needed."""
+        _LOGGER.info(
+            "[innotemp] Sending command: room_id=%s, param=%s, val_new=%s, "
+            "val_prev_options=%s",
+            room_id, param, val_new, val_prev_options,
+        )
+        for i, val_prev in enumerate(val_prev_options):
             command_data = {
                 "un": self._username,
                 "pw": self._password,
@@ -192,10 +305,12 @@ class InnotempApiClient:
             if val_prev is not None:
                 command_data["val_prev"] = str(val_prev)
             else:
-                command_data["val_prev"] = ""  # Send empty string if None
+                command_data["val_prev"] = ""
 
             _LOGGER.debug(
-                f"Attempting to send command for room {room_id}, param {param}: new={val_new}, prev={val_prev}. Payload: {command_data}"
+                "[innotemp] Command attempt %d/%d: room=%s, param=%s, "
+                "new=%s, prev=%s",
+                i + 1, len(val_prev_options), room_id, param, val_new, val_prev,
             )
 
             try:
@@ -204,57 +319,67 @@ class InnotempApiClient:
                 )
                 if result and result.get("info", "").startswith("success"):
                     _LOGGER.info(
-                        f"Command sent successfully for room {room_id}, param {param}: new={val_new}, prev={val_prev}. Response: {result}"
+                        "[innotemp] Command success: room=%s, param=%s, "
+                        "new=%s, prev=%s, response=%s",
+                        room_id, param, val_new, val_prev, result,
                     )
                     return True
                 else:
-                    # This is not a failure of the request, but the API rejecting the value.
                     _LOGGER.warning(
-                        f"API rejected command for room {room_id}, param {param} with prev={val_prev}. Response: {result}. Trying next value."
+                        "[innotemp] Command rejected: room=%s, param=%s, "
+                        "prev=%s, response=%s",
+                        room_id, param, val_prev, result,
                     )
             except InnotempAuthError as e:
                 _LOGGER.error(
-                    f"Authentication error sending command, aborting retries for this action. Error: {e}"
+                    "[innotemp] Command auth error (aborting): %s", e,
                 )
-                raise  # Re-raise to allow callers to handle auth failures immediately
+                raise
             except InnotempApiError as e:
                 _LOGGER.error(
-                    f"API error sending command with prev={val_prev}, trying next value. Error: {e}"
+                    "[innotemp] Command API error (trying next prev): %s", e,
                 )
-                # Continue to the next val_prev option
 
         _LOGGER.error(
-            f"All attempts to send command for room {room_id}, param {param} -> {val_new} failed with all provided previous values: {val_prev_options}"
+            "[innotemp] Command failed all attempts: room=%s, param=%s, "
+            "val_new=%s, tried prev_values=%s",
+            room_id, param, val_new, val_prev_options,
         )
         return False
 
     async def _get_signal_names(self) -> list[str]:
-        """Fetch the list of signal names for the SSE stream. Uses a cache after the first successful fetch."""
+        """Fetch the list of signal names for the SSE stream."""
         if self._signal_names_cache is not None:
-            _LOGGER.debug("Returning cached signal names: %s", self._signal_names_cache)
+            _LOGGER.debug(
+                "[innotemp] Using cached signal names (%d entries)",
+                len(self._signal_names_cache),
+            )
             return self._signal_names_cache
 
+        _LOGGER.debug("[innotemp] Fetching signal names from live_signal.read.php")
         init_data = {"init": "1", "un": self._username, "pw": self._password}
         response = await self._execute_with_retry(
             "POST", "live_signal.read.php", data=init_data
         )
         if response and isinstance(response, list):
-            if not response:  # Validation 1: Empty list check
-                _LOGGER.error("Fetched signal names list is empty.")
+            if not response:
+                _LOGGER.error("[innotemp] Signal names list is empty")
                 raise InnotempApiError("Failed to fetch signal names: list is empty.")
 
-            _LOGGER.debug(f"Fetched {len(response)} signal names for SSE: %s", response)
-            self._signal_names_cache = response  # Cache the fetched names
+            _LOGGER.info(
+                "[innotemp] Fetched %d signal names: %s",
+                len(response), response,
+            )
+            self._signal_names_cache = response
             return response
 
         _LOGGER.error(
-            "Failed to fetch signal names or response is not a list. Response: %s",
-            response,
+            "[innotemp] Signal names response not a list: type=%s, value=%s",
+            type(response).__name__, response,
         )
-        # Clear cache on error to ensure retry on next attempt if applicable
         self._signal_names_cache = None
         raise InnotempApiError(
-            "Could not fetch signal names or response was not a list."
+            f"Signal names response was {type(response).__name__}, not list: {response}"
         )
 
     async def async_sse_connect(
@@ -262,133 +387,118 @@ class InnotempApiClient:
     ) -> None:
         """Connect to the Server-Sent Events stream and process data."""
         if self._sse_task and not self._sse_task.done():
-            _LOGGER.warning("SSE task is already running.")
+            _LOGGER.warning("[innotemp] SSE task is already running, skipping")
             return
 
         async def sse_listener():
             """Internal task to listen for SSE messages."""
+            reconnect_count = 0
             while True:
+                reconnect_count += 1
+                msg_count = 0
+                _LOGGER.info(
+                    "[innotemp] SSE listener starting (attempt #%d)", reconnect_count,
+                )
                 try:
-                    # Always ensure we are logged in before starting/restarting the loop
                     if not self._is_logged_in:
+                        _LOGGER.debug("[innotemp] SSE: not logged in, logging in first")
                         await self.async_login()
 
                     signal_names = await self._get_signal_names()
                     if not signal_names:
-                        _LOGGER.warning(
-                            "No signal names fetched, cannot connect to SSE."
-                        )
-                        await asyncio.sleep(30)  # Wait before retrying
+                        _LOGGER.warning("[innotemp] SSE: no signal names, retry in 30s")
+                        await asyncio.sleep(30)
                         continue
+
                     sse_url = f"{self._base_url}/live_signal.read.SSE.php"
+                    _LOGGER.info(
+                        "[innotemp] SSE connecting: url=%s, signals=%d",
+                        sse_url, len(signal_names),
+                    )
 
                     async with self._session.get(sse_url) as response:
+                        _LOGGER.debug(
+                            "[innotemp] SSE connected: status=%s, headers=%s",
+                            response.status, dict(response.headers),
+                        )
                         response.raise_for_status()
                         async for line in response.content:
                             if not line.startswith(b"data:"):
                                 continue
+                            msg_count += 1
                             try:
                                 data_str = line.strip()[5:].decode("utf-8")
                                 data_list = json.loads(data_str)
                                 if isinstance(data_list, list):
-                                    _LOGGER.debug("Received SSE data: %s", data_list)
+                                    _LOGGER.debug(
+                                        "[innotemp] SSE msg #%d: %s", msg_count, data_list,
+                                    )
 
-                                    # Validation 2: Check for length mismatch
                                     if len(data_list) != len(signal_names):
                                         _LOGGER.error(
-                                            "SSE data length mismatch: expected %s values for signals %s, but got %s values: %s",
-                                            len(signal_names),
-                                            signal_names,
-                                            len(data_list),
-                                            data_list,
+                                            "[innotemp] SSE length mismatch: "
+                                            "expected %d signals, got %d values",
+                                            len(signal_names), len(data_list),
                                         )
-                                        # Clear signal names cache to force re-fetch on next connection attempt,
-                                        # as the signal list might have changed.
                                         self._signal_names_cache = None
-                                        _LOGGER.warning(
-                                            "Cleared signal names cache due to SSE data length mismatch. Will attempt to re-fetch on next cycle."
-                                        )
-                                        # Depending on strictness, we might raise an error or break the loop here.
-                                        # For now, log, clear cache, and continue to next message or retry cycle.
-                                        # If we `continue` here, it means we skip this specific data packet.
-                                        # If the error is persistent, the listener will eventually retry the connection.
-                                        # Re-raising an error here would make the sse_listener exit and retry sooner.
-                                        # Let's make it try to re-fetch signals by breaking the inner loop and letting the outer loop restart.
-                                        # This requires _get_signal_names to be called again.
-                                        # However, the current structure calls _get_signal_names outside the 'async for line' loop.
-                                        # So, to force a re-fetch of signal_names, we should probably reconnect.
-                                        # The simplest for now is to log and skip this packet.
-                                        # A more robust solution might involve a full reconnect if mismatches are persistent.
-                                        # For now, we'll log the error and skip this packet by using `continue`.
-                                        # To also force a re-fetch of signal names on the next main loop iteration of sse_listener:
-                                        self._signal_names_cache = (
-                                            None  # Ensure re-fetch
-                                        )
-                                        # This will cause the next call to _get_signal_names to fetch fresh.
-                                        # However, signal_names variable in current scope is stale.
-                                        # The problem is that signal_names is fetched once per SSE connection attempt.
-                                        # If it's wrong, the current connection is likely compromised.
-                                        # Let's log, clear cache, and then break from this inner processing loop to force a full reconnect.
-                                        # This seems safer than continuing to process with mismatched names.
-                                        # The outer `while True` loop in `sse_listener` will handle the reconnect.
-                                        # Update: The request was to log and continue.
-                                        # If we continue, we are skipping this packet. The signal_names list remains the same for the current connection.
-                                        # If the server starts sending different length data consistently, the cache won't help until a full reconnect.
-                                        # Clearing the cache and continuing means the *next* time _get_signal_names is called (after a reconnect), it will fetch.
-                                        # This seems like a reasonable compromise.
-                                        self._signal_names_cache = None  # Invalidate cache for next full connection attempt
-                                        _LOGGER.warning(
-                                            "Signal names cache cleared. A full reconnect will be needed to refresh signal names if the issue persists."
-                                        )
-                                        continue  # Skip this data packet
+                                        continue
 
                                     processed_data = dict(zip(signal_names, data_list))
+                                    _LOGGER.debug(
+                                        "[innotemp] SSE processed: %s", processed_data,
+                                    )
 
                                     if callback is None:
-                                        _LOGGER.error(
-                                            "SSE callback is None. Cannot process data."
-                                        )
+                                        _LOGGER.error("[innotemp] SSE callback is None")
                                     elif not callable(callback):
                                         _LOGGER.error(
-                                            "SSE callback is not callable. Type: %s. Cannot process data.",
+                                            "[innotemp] SSE callback not callable: %s",
                                             type(callback),
                                         )
                                     else:
-                                        # Corrected: async_set_updated_data is synchronous
                                         callback(processed_data)
                                 else:
                                     _LOGGER.warning(
-                                        "Received non-list SSE data: %s", data_list
+                                        "[innotemp] SSE non-list data: %s", data_list,
                                     )
                             except (json.JSONDecodeError, IndexError) as e:
-                                _LOGGER.warning("Error processing SSE data line: %s", e)
+                                _LOGGER.warning(
+                                    "[innotemp] SSE parse error: %s, line=%s",
+                                    e, line[:200],
+                                )
 
                 except InnotempApiError as e:
-                    _LOGGER.error("API error in SSE listener, will retry: %s", e)
+                    _LOGGER.error("[innotemp] SSE API error, retry in 30s: %s", e)
                 except aiohttp.ClientError as e:
-                    _LOGGER.error("Connection error in SSE listener, will retry: %s", e)
-                    self._is_logged_in = False  # Force re-login on next loop
+                    _LOGGER.error(
+                        "[innotemp] SSE connection error (type=%s), retry in 30s: %s",
+                        type(e).__name__, e,
+                    )
+                    self._is_logged_in = False
                 except Exception as e:
                     _LOGGER.exception(
-                        "Unexpected error in SSE listener, will retry: %s", e
+                        "[innotemp] SSE unexpected error, retry in 30s: %s", e,
                     )
                     self._is_logged_in = False
 
-                _LOGGER.info("SSE connection lost. Reconnecting in 30 seconds.")
+                _LOGGER.info(
+                    "[innotemp] SSE disconnected after %d messages, reconnecting in 30s",
+                    msg_count,
+                )
                 await asyncio.sleep(30)
 
         self._sse_task = asyncio.create_task(sse_listener())
-        _LOGGER.info("SSE listener task started.")
+        _LOGGER.info("[innotemp] SSE listener task created")
 
     async def async_sse_disconnect(self) -> None:
         """Disconnect the Server-Sent Events stream."""
         if self._sse_task:
-            _LOGGER.info("Stopping SSE listener task.")
+            _LOGGER.info("[innotemp] Stopping SSE listener task")
             self._sse_task.cancel()
             try:
                 await self._sse_task
             except asyncio.CancelledError:
-                pass  # Expected
+                pass
             finally:
                 self._sse_task = None
-                _LOGGER.info("SSE listener task stopped.")
+                _LOGGER.info("[innotemp] SSE listener task stopped")

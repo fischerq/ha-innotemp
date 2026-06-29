@@ -51,24 +51,31 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
         if user_input is not None:
-            # Basic validation: Try to connect
+            host = user_input["host"]
+            username = user_input["username"]
+            _LOGGER.info(
+                "[innotemp] Config flow: attempting login to host=%s, username=%s",
+                host, username,
+            )
             session = async_get_clientsession(self.hass)
             api_client = InnotempApiClient(
                 session,
-                user_input["host"],
-                user_input["username"],
+                host,
+                username,
                 user_input["password"],
             )
             try:
                 await api_client.async_login()
-                # If login is successful, create the entry
+                _LOGGER.info("[innotemp] Config flow: login successful")
                 return self.async_create_entry(
                     title="Innotemp Heating Controller", data=user_input
                 )
             except Exception as ex:
-                _LOGGER.error("Failed to connect to Innotemp: %s", ex)
+                _LOGGER.error(
+                    "[innotemp] Config flow: login failed: %s (type=%s)",
+                    ex, type(ex).__name__,
+                )
                 errors["base"] = "cannot_connect"
-                # Show an error form if connection fails
                 return self.async_show_form(
                     step_id="user",
                     data_schema=data_schema,

@@ -20,7 +20,7 @@ PLATFORMS: list[Platform] = [
 ]
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.WARNING)  # Changed logger level to warning
+_LOGGER.setLevel(logging.DEBUG)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
