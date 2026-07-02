@@ -14,10 +14,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
 from .api_parser import (
+    coerce_api_int,
     strip_html,
     process_room_config_data,
-    API_VALUE_TO_ONOFF_OPTION,
-    ONOFF_OPTION_TO_API_VALUE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -176,8 +175,18 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
         if api_value is None:
             return None
 
-        # API value is expected to be "1" or "0" (as string) or possibly int
-        return str(api_value) == "1"
+        # The value arrives in mixed forms ("1", "1.0", 1, 1.0). A strict
+        # string compare against "1" misread "1.0" as off.
+        int_value = coerce_api_int(api_value)
+        if int_value is None:
+            _LOGGER.warning(
+                "Switch %s (%s): cannot interpret API value %r as on/off.",
+                self.entity_id,
+                self._param_id,
+                api_value,
+            )
+            return None
+        return int_value == 1
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
@@ -189,33 +198,12 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
 
     async def _send_switch_command(self, turn_on: bool) -> None:
         """Helper to send the turn on/off command."""
-        target_value_str = "1" if turn_on else "0"  # "1" for On, "0" for Off
+        val_new = "1" if turn_on else "0"
 
-        # We need the API value (often the same as what we deduced)
-        # Assuming ONOFF_OPTION_TO_API_VALUE maps "On" -> "1", "Off" -> "0"
-        # Let's verify mapping:
-        # API_VALUE_TO_ONOFF_OPTION: {"0": "Off", "1": "On"}
-        # ONOFF_OPTION_TO_API_VALUE: {"Off": "0", "On": "1"} (roughly)
-
-        # If we use ONOFF_OPTION_TO_API_VALUE:
-        target_option = "On" if turn_on else "Off"
-        # Need to find matching key in ONOFF_OPTION_TO_API_VALUE
-        # Since ONOFF_OPTION_TO_API_VALUE is constructed by reversing API_VALUE_TO_ONOFF_OPTION
-        # which has multiple keys for same value (0, 0.0), it might pick one.
-        # But for sending, "0" and "1" are safest for Innotemp usually.
-
-        # Let's use strict "0" and "1" as they are standard Innotemp boolean values.
-        val_new = target_value_str
-
-        # Previous value handling.
-        #
         # The controller uses ``val_prev`` for optimistic locking: a command is
         # only applied when ``val_prev`` matches the parameter's *current* value.
         # The current value must be read from the same var the entity displays
-        # (its own ``param_id``), exactly as ``is_on`` does. Previously this read
-        # the *mapped state var* from ``control_to_state_map`` which is a
-        # different (and often unpopulated) signal, so the first ``val_prev`` sent
-        # was a wrong guess and the device silently ignored the change.
+        # (its own ``param_id``), exactly as ``is_on`` does.
         previous_api_value: Any | None = None
         if self.coordinator.data:
             previous_api_value = self.coordinator.data.get(self._param_id)
@@ -230,9 +218,8 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
         if previous_api_value is not None:
             # Normalise to a clean "0"/"1" so the very first attempt carries the
             # correct previous value (SSE may deliver "1.0", 1, etc.).
-            val_prev_options.append(
-                "1" if str(previous_api_value) in ("1", "1.0") else "0"
-            )
+            prev_int = coerce_api_int(previous_api_value)
+            val_prev_options.append("1" if prev_int == 1 else "0")
 
         # Fallbacks: try both boolean states, then an empty val_prev.
         for val in ("0", "1"):

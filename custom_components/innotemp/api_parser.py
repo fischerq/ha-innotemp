@@ -36,6 +36,25 @@ ONOFF_OPTION_TO_API_VALUE: Dict[str, str] = (
 ONOFF_OPTIONS_LIST: List[str] = ["Off", "On"]
 
 
+def coerce_api_int(value: Any) -> Optional[int]:
+    """Coerce an API value to an int, or return None if not possible.
+
+    Values arrive from the SSE stream and the config in mixed forms:
+    ``1``, ``"1"``, ``1.0``, ``"1.0"``, ``"2"`` ... A plain ``int(value)``
+    raises on ``"1.0"``, which made enum lookups fail for float-formatted
+    values. Only integral values are accepted (``"1.5"`` returns None).
+    """
+    if value is None:
+        return None
+    try:
+        as_float = float(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+    if not as_float.is_integer():
+        return None
+    return int(as_float)
+
+
 def strip_html(text: str | None) -> str:
     """Remove HTML tags from a string."""
     if text is None:

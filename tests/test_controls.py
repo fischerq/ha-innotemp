@@ -125,7 +125,171 @@ async def test_number_sends_numeric_room_id_and_updates_state(hass: HomeAssistan
     # Regression: previously this was "room3_param1" (the string var).
     assert kwargs["room_id"] == 3
     assert kwargs["param"] == param
-    assert kwargs["val_new"] == 21.0
+    # Integral floats are sent as plain ints (val_new=21, not 21.0), matching
+    # what the controller's own web UI sends.
+    assert kwargs["val_new"] == 21
     assert kwargs["val_prev_options"][0] == "18"
-    assert coordinator.data[param] == 21.0
+    assert coordinator.data[param] == 21
     assert number.native_value == 21.0
+
+
+def _make_switch(coordinator, param="room3_param1_entry1"):
+    switch = InnotempSwitch(
+        coordinator,
+        _config_entry(),
+        ROOM,
+        3,
+        COMP,
+        param,
+        {"unit": "ONOFF", "var": param, "label": "Pump"},
+    )
+    switch.async_write_ha_state = MagicMock()
+    return switch
+
+
+@pytest.mark.parametrize(
+    ("api_value", "expected"),
+    [
+        ("1", True),
+        ("1.0", True),  # SSE delivers float-formatted strings
+        (1, True),
+        (1.0, True),
+        ("0", False),
+        ("0.0", False),
+        (0, False),
+        ("garbage", None),
+    ],
+)
+def test_switch_is_on_handles_mixed_value_formats(api_value, expected):
+    """``is_on`` must interpret "1.0"/1.0/1 all as on, not just "1"."""
+    param = "room3_param1_entry1"
+    coordinator = _make_coordinator({param: api_value})
+    switch = _make_switch(coordinator, param)
+    assert switch.is_on is expected
+
+
+@pytest.mark.asyncio
+async def test_switch_normalizes_float_prev_value(hass: HomeAssistant):
+    """A float-formatted current value must be normalised for val_prev."""
+    param = "room3_param1_entry1"
+    coordinator = _make_coordinator({param: "1.0"})  # currently ON, float format
+    switch = _make_switch(coordinator, param)
+
+    await switch.async_turn_off()
+
+    kwargs = coordinator.api_client.async_send_command.call_args.kwargs
+    assert kwargs["val_prev_options"][0] == "1"
+
+
+@pytest.mark.parametrize(
+    ("api_value", "expected"),
+    [
+        (1, "On"),
+        ("1", "On"),
+        ("2.0", "Auto"),  # SSE delivers float-formatted strings
+        (0.0, "Off"),
+        ("garbage", None),
+    ],
+)
+def test_select_current_option_handles_mixed_value_formats(
+    hass: HomeAssistant, api_value, expected
+):
+    """``current_option`` must handle "2.0"-style values (int() alone raises)."""
+    param = "room3_param1_e2"
+    coordinator = _make_coordinator({param: api_value})
+    select = InnotempInputSelect(
+        hass,
+        coordinator,
+        _config_entry(),
+        ROOM,
+        3,
+        COMP,
+        param,
+        {"unit": "ONOFFAUTO", "var": param, "label": "Mode"},
+    )
+    assert select.current_option == expected
+
+
+@pytest.mark.asyncio
+async def test_select_normalizes_float_prev_value(hass: HomeAssistant):
+    """A float-formatted current value must be sent as its int API form."""
+    param = "room3_param1_e2"
+    coordinator = _make_coordinator({param: "1.0"})  # currently On, float format
+    select = InnotempInputSelect(
+        hass,
+        coordinator,
+        _config_entry(),
+        ROOM,
+        3,
+        COMP,
+        param,
+        {"unit": "ONOFFAUTO", "var": param, "label": "Mode"},
+    )
+    select.async_write_ha_state = MagicMock()
+
+    await select.async_select_option("Auto")
+
+    kwargs = coordinator.api_client.async_send_command.call_args.kwargs
+    assert kwargs["val_prev_options"][0] == 1
+
+
+@pytest.mark.asyncio
+async def test_number_keeps_fractional_value_and_prev_fallbacks(
+    hass: HomeAssistant,
+):
+    """Fractional values are sent as-is; prev options include normalised form."""
+    param = "room3_param1_n1"
+    coordinator = _make_coordinator({param: "18.0"})
+    number = InnotempNumber(
+        coordinator,
+        _config_entry(),
+        ROOM,
+        COMP,
+        param,
+        {"unit": "°C", "var": param, "label": "Setpoint"},
+    )
+    number.async_write_ha_state = MagicMock()
+
+    await number.async_set_native_value(21.5)
+
+    kwargs = coordinator.api_client.async_send_command.call_args.kwargs
+    assert kwargs["val_new"] == 21.5
+    # Raw previous value first, then the int-normalised form, then the
+    # empty-string fallback.
+    assert kwargs["val_prev_options"] == ["18.0", "18", None]
+
+
+@pytest.mark.asyncio
+async def test_number_without_prev_value_still_sends_command(hass: HomeAssistant):
+    """With no known previous value only the empty fallback is offered."""
+    param = "room3_param1_n1"
+    coordinator = _make_coordinator({})
+    number = InnotempNumber(
+        coordinator,
+        _config_entry(),
+        ROOM,
+        COMP,
+        param,
+        {"unit": "°C", "var": param, "label": "Setpoint"},
+    )
+    number.async_write_ha_state = MagicMock()
+
+    await number.async_set_native_value(21.0)
+
+    kwargs = coordinator.api_client.async_send_command.call_args.kwargs
+    assert kwargs["val_prev_options"] == [None]
+
+
+@pytest.mark.asyncio
+async def test_switch_failed_command_does_not_update_state(hass: HomeAssistant):
+    """A rejected command must not optimistically flip the state."""
+    param = "room3_param1_entry1"
+    coordinator = _make_coordinator({param: "1"})
+    coordinator.api_client.async_send_command = AsyncMock(return_value=False)
+    switch = _make_switch(coordinator, param)
+
+    await switch.async_turn_off()
+
+    assert coordinator.data[param] == "1"
+    assert switch.is_on is True
+    switch.async_write_ha_state.assert_not_called()

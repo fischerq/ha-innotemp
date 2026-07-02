@@ -628,3 +628,28 @@ def test_process_room_config_data(
                     assert res["numeric_room_id"] == 3
     elif expected_count == 0:
         assert not results  # Ensure results list is empty
+
+
+class TestCoerceApiInt:
+    """Tests for coerce_api_int, used by switch/select/enum-sensor lookups."""
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (1, 1),
+            ("1", 1),
+            (1.0, 1),
+            ("1.0", 1),  # SSE float-formatted string; int("1.0") raises
+            ("2.0", 2),
+            (" 0 ", 0),
+            (0.0, 0),
+            ("1.5", None),  # non-integral values are rejected, not truncated
+            ("garbage", None),
+            (None, None),
+            ("", None),
+        ],
+    )
+    def test_coerce_api_int(self, value, expected):
+        from custom_components.innotemp.api_parser import coerce_api_int
+
+        assert coerce_api_int(value) == expected
