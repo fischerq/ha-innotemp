@@ -2,10 +2,12 @@
 
 import logging
 
+import aiohttp
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import InnotempApiClient
 from .coordinator import InnotempDataUpdateCoordinator
@@ -65,7 +67,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     username = entry.data["username"]
     password = entry.data["password"]
 
-    session = async_get_clientsession(hass)
+    # The Innotemp controller authenticates via a PHPSESSID cookie and is
+    # typically addressed by a bare IP. aiohttp's default CookieJar silently
+    # *discards* cookies set by IP hosts (unsafe=False), so the shared HA
+    # session never kept the session cookie: login appeared to succeed but
+    # every subsequent request (especially the SSE stream, which carries no
+    # credentials in its body) was unauthenticated. Use a dedicated session
+    # with an unsafe cookie jar so the session cookie survives.
+    session = async_create_clientsession(
+        hass, cookie_jar=aiohttp.CookieJar(unsafe=True)
+    )
     _LOGGER.debug(
         f"Innotemp: Initializing API client. Session type: {type(session)}, Host: {host}"
     )
@@ -125,6 +136,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "api": api_client,
         "coordinator": coordinator,
         "config": config_data,  # Still store original config_data for entity discovery if needed
+        "session": session,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -135,3 +147,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry, stopping the SSE listener and closing the session.
+
+    Without this, removing/reloading the integration left the SSE background
+    task running forever and re-adding the entry spawned a second listener.
+    """
+    _LOGGER.info("[innotemp] Unloading entry %s", entry.entry_id)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        data = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if data:
+            api_client: InnotempApiClient = data["api"]
+            coordinator: InnotempDataUpdateCoordinator = data["coordinator"]
+
+            await api_client.async_sse_disconnect()
+
+            sse_wrapper = getattr(coordinator, "sse_task", None)
+            if sse_wrapper and not sse_wrapper.done():
+                sse_wrapper.cancel()
+
+            await coordinator.async_shutdown()
+
+            session = data.get("session")
+            if session:
+                await session.close()
+        _LOGGER.info("[innotemp] Entry %s unloaded", entry.entry_id)
+
+    return unload_ok

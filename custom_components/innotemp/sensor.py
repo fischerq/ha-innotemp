@@ -20,6 +20,7 @@ from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator
 from .coordinator import InnotempCoordinatorEntity
 from .api_parser import (
+    coerce_api_int,
     strip_html,
     process_room_config_data,
     parse_var_enum_string,
@@ -362,19 +363,21 @@ class InnotempEnumSensor(InnotempCoordinatorEntity, SensorEntity):
         if api_value is None:
             return None
 
-        try:
-            # Ensure api_value is treated as an integer for dictionary lookup
-            selected_option = API_VALUE_TO_ONOFFAUTO_OPTION.get(int(api_value))
-            if selected_option is None:
-                _LOGGER.warning(
-                    f"InnotempEnumSensor.native_value: Unknown API value '{api_value}' for param_id {self._param_id} on entity {self.entity_id}. Not in {API_VALUE_TO_ONOFFAUTO_OPTION}"
-                )
-            return selected_option
-        except (ValueError, TypeError):
+        # Convert the API value to an int for the lookup. Values may arrive as
+        # "1", 1, or "1.0" (int("1.0") raises, which made the state unknown).
+        int_value = coerce_api_int(api_value)
+        if int_value is None:
             _LOGGER.warning(
                 f"InnotempEnumSensor.native_value: Could not convert API value '{api_value}' to int for param_id {self._param_id} on entity {self.entity_id}."
             )
             return None
+
+        selected_option = API_VALUE_TO_ONOFFAUTO_OPTION.get(int_value)
+        if selected_option is None:
+            _LOGGER.warning(
+                f"InnotempEnumSensor.native_value: Unknown API value '{api_value}' for param_id {self._param_id} on entity {self.entity_id}. Not in {API_VALUE_TO_ONOFFAUTO_OPTION}"
+            )
+        return selected_option
 
     # Ensure InnotempEnumSensor uses its _attr_device_class = SensorDeviceClass.ENUM
     # by NOT overriding the device_class property here. If this property method exists

@@ -8,18 +8,13 @@ from typing import Any, Dict, Optional
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity_registry import async_get, EntityRegistry
-from homeassistant.helpers.entity_registry import (
-    EntityRegistry,
-    async_get,
-    RegistryEntry,
-)
 
 from .const import DOMAIN
 from .coordinator import InnotempDataUpdateCoordinator, InnotempCoordinatorEntity
 from .api_parser import (
+    coerce_api_int,
     strip_html,
     process_room_config_data,
     API_VALUE_TO_ONOFFAUTO_OPTION,
@@ -191,20 +186,21 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
         if api_value is None:
             return None  # Or a default option
 
-        # Convert numeric API value to string option
-        try:
-            # Ensure api_value is treated as an integer for dictionary lookup
-            selected_option = API_VALUE_TO_ONOFFAUTO_OPTION.get(int(api_value))
-            if selected_option is None:
-                _LOGGER.warning(
-                    f"InnotempInputSelect.current_option: Unknown API value '{api_value}' for param_id {self._param_id} on entity {self.entity_id}. Not in {API_VALUE_TO_ONOFFAUTO_OPTION}"
-                )
-            return selected_option
-        except (ValueError, TypeError):
+        # Convert the API value to an int for the lookup. Values may arrive as
+        # "1", 1, or "1.0" (int("1.0") raises, which made the option unknown).
+        int_value = coerce_api_int(api_value)
+        if int_value is None:
             _LOGGER.warning(
                 f"InnotempInputSelect.current_option: Could not convert API value '{api_value}' to int for param_id {self._param_id} on entity {self.entity_id}."
             )
             return None
+
+        selected_option = API_VALUE_TO_ONOFFAUTO_OPTION.get(int_value)
+        if selected_option is None:
+            _LOGGER.warning(
+                f"InnotempInputSelect.current_option: Unknown API value '{api_value}' for param_id {self._param_id} on entity {self.entity_id}. Not in {API_VALUE_TO_ONOFFAUTO_OPTION}"
+            )
+        return selected_option
 
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
@@ -231,13 +227,14 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
                     previous_api_value = self.coordinator.data.get(state_var)
 
         # Build the list of previous values to try, normalising the current value
-        # to its integer API form so the first attempt carries the correct prev.
+        # to its integer API form so the first attempt carries the correct prev
+        # (SSE may deliver "1.0", which int() alone cannot parse).
         val_prev_options = []
         if previous_api_value is not None:
-            try:
-                val_prev_options.append(int(previous_api_value))
-            except (ValueError, TypeError):
-                val_prev_options.append(previous_api_value)
+            prev_int = coerce_api_int(previous_api_value)
+            val_prev_options.append(
+                prev_int if prev_int is not None else previous_api_value
+            )
 
         # Add all possible enum values, ensuring the last known is first.
         for val in ONOFFAUTO_OPTION_TO_API_VALUE.values():

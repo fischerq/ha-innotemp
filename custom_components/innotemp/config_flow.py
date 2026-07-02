@@ -1,17 +1,15 @@
 """Config flow for Innotemp Heating Controller."""
 
-import asyncio
 import logging
+
+import aiohttp
 import voluptuous as vol
 
-from homeassistant import config_entries, core
-from homeassistant.const import Platform
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant import config_entries
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .const import DOMAIN
 from .api import InnotempApiClient
-from .coordinator import InnotempDataUpdateCoordinator
-from . import PLATFORMS  # Import PLATFORMS from __init__.py
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,9 +53,15 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             username = user_input["username"]
             _LOGGER.info(
                 "[innotemp] Config flow: attempting login to host=%s, username=%s",
-                host, username,
+                host,
+                username,
             )
-            session = async_get_clientsession(self.hass)
+            # Use an unsafe cookie jar so the controller's PHPSESSID cookie is
+            # kept even when the host is a bare IP address (aiohttp's default
+            # jar drops cookies from IP hosts). Matches async_setup_entry.
+            session = async_create_clientsession(
+                self.hass, cookie_jar=aiohttp.CookieJar(unsafe=True)
+            )
             api_client = InnotempApiClient(
                 session,
                 host,
@@ -73,7 +77,8 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             except Exception as ex:
                 _LOGGER.error(
                     "[innotemp] Config flow: login failed: %s (type=%s)",
-                    ex, type(ex).__name__,
+                    ex,
+                    type(ex).__name__,
                 )
                 errors["base"] = "cannot_connect"
                 return self.async_show_form(
@@ -81,74 +86,9 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=data_schema,
                     errors=errors,
                 )
+            finally:
+                await session.close()
 
         return self.async_show_form(
             step_id="user", data_schema=data_schema, errors=errors
         )
-
-
-async def async_setup_entry(
-    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
-    """Set up Innotemp Heating Controller from a config entry."""
-
-    hass.data.setdefault(DOMAIN, {})
-
-    host = entry.data["host"]
-    username = entry.data["username"]
-    password = entry.data["password"]
-
-    session = async_get_clientsession(hass)
-    api_client = InnotempApiClient(session, host, username, password)
-
-    # Login and fetch initial configuration
-    try:
-        await api_client.async_login()
-        config_data = await api_client.async_get_config()
-        _LOGGER.debug("Initial configuration fetched: %s", config_data)
-    except Exception as ex:
-        _LOGGER.error("Failed to connect and fetch initial config: %s", ex)
-        return False
-
-    # Correct instantiation of the coordinator, similar to __init__.py
-    # Use the module-level _LOGGER for consistency
-    coordinator = InnotempDataUpdateCoordinator(hass, _LOGGER, api_client)
-
-    # Pass the coordinator's async_set_updated_data as the callback for SSE
-    # It's possible this whole async_setup_entry in config_flow.py is problematic
-    # if it races with or duplicates the one in __init__.py.
-    _LOGGER.debug(
-        "Config_flow.py: Setting up SSE connection via its async_setup_entry."
-    )
-
-    hass.data[DOMAIN][entry.entry_id] = {
-        "api": api_client,
-        "coordinator": coordinator,
-        "config": config_data,  # Store config data for entity creation
-    }
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-
-    return True
-
-
-async def async_unload_entry(
-    hass: core.HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
-    """Unload a config entry."""
-    if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        api_client = hass.data[DOMAIN][entry.entry_id]["api"]
-        coordinator = hass.data[DOMAIN][entry.entry_id]["coordinator"]
-
-        # Disconnect SSE before removing the entry data
-        if coordinator.sse_task:
-            await api_client.async_sse_disconnect()
-            coordinator.sse_task.cancel()
-            try:
-                await coordinator.sse_task
-            except asyncio.CancelledError:
-                pass
-
-        hass.data[DOMAIN].pop(entry.entry_id)
-
-    return unload_ok
