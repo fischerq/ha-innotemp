@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to an Innotemp controller",
+        "description": "Enter the address of the controller's web interface and the credentials you use to log in there.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        },
+        "data_description": {
+          "host": "IP address or hostname of the controller, e.g. 192.168.25.204 (without http://).",
+          "username": "User name of the controller's web interface.",
+          "password": "Password of the controller's web interface."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication",
+      "invalid_host": "Enter a valid IP address or hostname, without http:// or a path.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  }
+}

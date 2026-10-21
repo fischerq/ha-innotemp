@@ -1,0 +1,29 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mit einer Innotemp-Steuerung verbinden",
+        "description": "Gib die Adresse der Weboberfläche der Steuerung und die Zugangsdaten ein, mit denen du dich dort anmeldest.",
+        "data": {
+          "host": "Host",
+          "username": "Benutzername",
+          "password": "Passwort"
+        },
+        "data_description": {
+          "host": "IP-Adresse oder Hostname der Steuerung, z. B. 192.168.25.204 (ohne http://).",
+          "username": "Benutzername der Weboberfläche der Steuerung.",
+          "password": "Passwort der Weboberfläche der Steuerung."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "invalid_auth": "Ungültige Anmeldedaten",
+      "invalid_host": "Gib eine gültige IP-Adresse oder einen Hostnamen ein, ohne http:// und ohne Pfad.",
+      "unknown": "Unerwarteter Fehler"
+    },
+    "abort": {
+      "already_configured": "Gerät ist bereits konfiguriert"
+    }
+  }
+}

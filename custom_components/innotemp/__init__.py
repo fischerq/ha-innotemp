@@ -6,10 +6,12 @@ import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
-from .api import InnotempApiClient
+from .api import InnotempApiClient, InnotempApiError, normalize_host
 from .coordinator import InnotempDataUpdateCoordinator
 from .const import DOMAIN
 from .api_parser import extract_initial_states, create_control_state_map
@@ -22,47 +24,100 @@ PLATFORMS: list[Platform] = [
 ]
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.setLevel(logging.DEBUG)
+
+# Prefix every entity unique id had before config entries got a unique id
+# (``f"{config_entry.unique_id}_{param}"`` with ``unique_id is None``).
+LEGACY_UNIQUE_ID_PREFIX = "None_"
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entries.
+
+    1.1 -> 1.2: entries created before the config flow set a unique id have
+    ``unique_id=None``, and all their entities were registered as
+    ``None_<param>``. Give the entry its host-based unique id (unless another
+    entry already owns it) and rename the registered entities to
+    ``<entry unique id or entry_id>_<param>`` *in place*, so entity ids,
+    history and customisations are kept and no duplicate entities appear.
+    """
+    if entry.version > 1:
+        # Downgrade from a future version: refuse rather than corrupt.
+        return False
+
+    if entry.version == 1 and entry.minor_version < 2:
+        new_unique_id = entry.unique_id
+        if new_unique_id is None:
+            try:
+                candidate = normalize_host(entry.data.get("host"))
+            except ValueError:
+                candidate = None
+            taken = candidate is not None and any(
+                other.unique_id == candidate
+                for other in hass.config_entries.async_entries(DOMAIN)
+                if other.entry_id != entry.entry_id
+            )
+            if candidate and not taken:
+                new_unique_id = candidate
+            elif taken:
+                _LOGGER.warning(
+                    "Another Innotemp entry already uses host %s; entry %s keeps "
+                    "an entry_id-based identity",
+                    candidate,
+                    entry.entry_id,
+                )
+
+        prefix = new_unique_id or entry.entry_id
+        ent_reg = er.async_get(hass)
+
+        @callback
+        def _migrate_unique_id(reg_entry: er.RegistryEntry) -> dict | None:
+            old = reg_entry.unique_id
+            if not old.startswith(LEGACY_UNIQUE_ID_PREFIX):
+                return None
+            new = f"{prefix}_{old[len(LEGACY_UNIQUE_ID_PREFIX):]}"
+            existing = ent_reg.async_get_entity_id(reg_entry.domain, DOMAIN, new)
+            if existing:
+                _LOGGER.warning(
+                    "Cannot migrate %s (%s) to unique id %s: already used by %s",
+                    reg_entry.entity_id,
+                    old,
+                    new,
+                    existing,
+                )
+                return None
+            _LOGGER.debug(
+                "Migrating %s unique id %s -> %s", reg_entry.entity_id, old, new
+            )
+            return {"new_unique_id": new}
+
+        await er.async_migrate_entries(hass, entry.entry_id, _migrate_unique_id)
+        hass.config_entries.async_update_entry(
+            entry, unique_id=new_unique_id, minor_version=2
+        )
+        _LOGGER.info(
+            "Migrated Innotemp entry %s to version 1.2 (unique id %s)",
+            entry.entry_id,
+            new_unique_id,
+        )
+
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Innotemp Heating Controller from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
 
-    hass.data.setdefault(DOMAIN, {})  # type: ignore[no-untyped-call]
-
-    host = entry.data["host"]
-
-    # Specific check for known invalid host formats from stored config
-    invalid_host_detected = False
-    if not host:
+    try:
+        host = normalize_host(entry.data.get("host"))
+    except ValueError as err:
+        # A broken stored host cannot fix itself; retrying would be pointless.
         _LOGGER.error(
-            "Stored Innotemp configuration has an empty host. "
-            "Please remove and re-add the integration with a valid host."
+            "Stored Innotemp host %r is invalid (%s). Please remove and re-add "
+            "the integration.",
+            entry.data.get("host"),
+            err,
         )
-        invalid_host_detected = True
-    elif host.lower() in ["http", "https"]:
-        _LOGGER.error(
-            f"Stored Innotemp configuration has an invalid host: '{host}'. "
-            "This should be an IP address or hostname, not 'http' or 'https'. "
-            "Please remove and re-add the integration."
-        )
-        invalid_host_detected = True
-    elif "://" in host:
-        _LOGGER.error(
-            f"Stored Innotemp configuration host '{host}' contains '://'. "
-            "Please use just the IP address or hostname. "
-            "Please remove and re-add the integration."
-        )
-        invalid_host_detected = True
-    elif len(host) < 3:  # Basic sanity check
-        _LOGGER.error(
-            f"Stored Innotemp configuration host '{host}' is too short or invalid. "
-            "Please remove and re-add the integration with a valid host."
-        )
-        invalid_host_detected = True
-
-    if invalid_host_detected:
-        return False  # Abort setup early
+        return False
 
     username = entry.data["username"]
     password = entry.data["password"]
@@ -70,80 +125,48 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # The Innotemp controller authenticates via a PHPSESSID cookie and is
     # typically addressed by a bare IP. aiohttp's default CookieJar silently
     # *discards* cookies set by IP hosts (unsafe=False), so the shared HA
-    # session never kept the session cookie: login appeared to succeed but
-    # every subsequent request (especially the SSE stream, which carries no
-    # credentials in its body) was unauthenticated. Use a dedicated session
-    # with an unsafe cookie jar so the session cookie survives.
+    # session never kept the session cookie. Use a dedicated session with an
+    # unsafe cookie jar so the session cookie survives.
     session = async_create_clientsession(
         hass, cookie_jar=aiohttp.CookieJar(unsafe=True)
     )
-    _LOGGER.debug(
-        f"Innotemp: Initializing API client. Session type: {type(session)}, Host: {host}"
-    )
     api_client = InnotempApiClient(session, host, username, password)
 
-    # Login and fetch initial configuration
     try:
-        _LOGGER.debug(
-            "Attempting to login to Innotemp API with host: %s, username: %s, password_provided: %s",
-            host,
-            username,
-            bool(password),
-        )
         await api_client.async_login()
-        _LOGGER.debug("Login successful.")
-        _LOGGER.debug("Attempting to fetch initial configuration.")
         config_data = await api_client.async_get_config()
-        _LOGGER.debug("Configuration fetching complete.")
-        if config_data is None:
-            _LOGGER.error(
-                "Failed to fetch configuration from Innotemp device (config_data is None). Aborting setup."
-            )
-            return False
-        _LOGGER.debug(f"Fetched initial config data: {config_data}")
-        _LOGGER.debug("Initial configuration fetched: %s", config_data)
-    except Exception as ex:
-        _LOGGER.error("Failed to connect and fetch initial config: %s", ex)
-        return False
-
-    coordinator = InnotempDataUpdateCoordinator(hass, _LOGGER, api_client)
-
-    # Extract initial states from the detailed config_data and set it on the coordinator
-    if config_data:
-        _LOGGER.debug(
-            "Processing config_data to extract initial states for coordinator."
+    except InnotempApiError as err:
+        await session.close()
+        # Raising ConfigEntryNotReady makes HA retry with backoff, so an
+        # integration whose controller is offline at boot recovers on its own.
+        raise ConfigEntryNotReady(
+            f"Cannot connect to Innotemp controller at {host}: {err}"
+        ) from err
+    if not config_data:
+        await session.close()
+        raise ConfigEntryNotReady(
+            f"Innotemp controller at {host} returned no configuration"
         )
-        initial_states = extract_initial_states(config_data)
-        if initial_states:
-            _LOGGER.debug(
-                f"Setting {len(initial_states)} initial states on coordinator."
-            )
-            coordinator.async_set_updated_data(initial_states)
-        else:
-            _LOGGER.debug("No initial states extracted from config_data.")
 
-        # Create and store the control-to-state mapping
-        _LOGGER.debug("Creating control-to-state mapping from config_data.")
-        control_map = create_control_state_map(config_data)
-        coordinator.control_to_state_map = control_map
+    coordinator = InnotempDataUpdateCoordinator(
+        hass, _LOGGER, api_client, config_entry=entry
+    )
 
-    else:
-        _LOGGER.warning(
-            "config_data is None, cannot set initial states or control map on coordinator."
-        )
+    initial_states = extract_initial_states(config_data)
+    if initial_states:
+        coordinator.async_set_updated_data(initial_states)
+    coordinator.control_to_state_map = create_control_state_map(config_data)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api_client,
         "coordinator": coordinator,
-        "config": config_data,  # Still store original config_data for entity discovery if needed
+        "config": config_data,
         "session": session,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
-    # This call might now be partially redundant if initial_states were set,
-    # but it's standard practice and handles coordinator lifecycle.
-    # If _async_update_data is a no-op (as it is for SSE), this won't fetch again.
+    # Data is pushed via SSE; _async_update_data just returns the current data.
     await coordinator.async_config_entry_first_refresh()
 
     return True
