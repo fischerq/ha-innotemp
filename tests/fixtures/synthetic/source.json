@@ -1,0 +1,4 @@
+{
+  "source": "synthetic",
+  "note": "SYNTHETIC - hand-written from docs/API_SPEC.md and tests/roomconf_test_data.json, NOT recorded from a real controller. Replace with a recording made by scripts/smoke_test.py --record tests/fixtures/recorded/ as soon as possible. Unknowns guessed here: the login response body beyond {\"info\": \"success\"}, where roomconf carries current values (\"value\" keys), the exact SSE framing, and the value.save.php response body."
+}

@@ -1,0 +1,48 @@
+{
+  "city": "Musterstadt,DE",
+  "room": [
+    {
+      "@attributes": {"type": "room001", "label": "Heizraum", "var": "001_room_name"},
+      "display": [
+        {
+          "@attributes": {"type": "display002", "label": "Pufferspeicher", "var": "001_d_display002", "access": "user"},
+          "input": [
+            {"type": "b_input1", "var": "001_d_display002inp1", "unit": "°C", "access": "user", "label": "Pufferspeicher Oben"},
+            {"type": "b_input2", "var": "001_d_display002inp2", "unit": "°C", "access": "user", "label": "Pufferspeicher Unten"}
+          ]
+        }
+      ],
+      "mixer": {
+        "@attributes": {"type": "mixer001", "label": "Heizkreis 1", "var": "001_mixer001", "access": "user"},
+        "entry": [
+          {"type": "b_entry00101", "var": "001_mixer001_entry1", "unit": "°C", "access": "user", "label": "Vorlauf <b>Soll</b>", "value": "45"}
+        ],
+        "input": [
+          {"type": "b_input1", "var": "001_mixer001_inp1", "unit": "°C", "access": "user", "label": "Vorlauf Ist"}
+        ],
+        "output": [
+          {"type": "b_output1", "var": "001_mixer001_out1", "unit": "%", "access": "user", "label": "Mischerstellung"}
+        ]
+      }
+    },
+    {
+      "@attributes": {"type": "room003", "label": "Technik", "var": "003_room_name"},
+      "display": [
+        {
+          "@attributes": {"type": "display001", "label": "Batterie", "var": "003_d_display001", "access": "user"},
+          "input": [
+            {"type": "b_input4", "var": "003_d_display001inp4", "unit": "%", "access": "user", "label": "Batterie SOC"}
+          ]
+        }
+      ],
+      "param": {
+        "@attributes": {"type": "e17par02", "label": "Heizstab", "var": "003_e17par02", "access": "user"},
+        "entry": [
+          {"type": "b_entry00101", "var": "003_e17par02_gui001out1", "unit": "ONOFFAUTO", "access": "user", "label": "Heizstab Normal Heizen", "value": "2"},
+          {"type": "b_entry00102", "var": "003_e17par02_entry2", "unit": "ONOFF", "access": "user", "label": "Heizstab Freigabe", "value": "1"},
+          {"type": "b_entry00103", "var": "003_e17par02_entry3", "unit": "K", "access": "user", "label": "Hysterese", "value": "5"}
+        ]
+      }
+    }
+  ]
+}
