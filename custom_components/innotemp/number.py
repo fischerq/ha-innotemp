@@ -18,6 +18,18 @@ from .api_parser import strip_html, process_room_config_data, extract_numeric_ro
 
 _LOGGER = logging.getLogger(__name__)
 
+# Keys of a room's components that may hold this platform's items.
+CONTAINER_KEYS: list[str] = [
+    "param",
+    "mixer",
+    "piseq",
+    "radiator",
+    "drink",
+    "main",
+    # 'pump', 'display' usually have 'input'/'output' for sensors,
+    # less likely 'entry' for numbers
+]
+
 
 def _is_potential_number_entity(item_data: Dict[str, Any]) -> bool:
     """Checks if the item_data represents a potential number entity."""
@@ -112,20 +124,9 @@ async def async_setup_entry(
         str(config_data)[:500],
     )
 
-    possible_containers_keys = [
-        "param",
-        "mixer",
-        "piseq",
-        "radiator",
-        "drink",
-        "main",
-        # 'pump', 'display' usually have 'input'/'output' for sensors,
-        # less likely 'entry' for numbers
-    ]
-
     number_entities_data = process_room_config_data(
         config_data=config_data,
-        possible_container_keys=possible_containers_keys,
+        possible_container_keys=CONTAINER_KEYS,
         item_processor=_create_number_entity_data,
     )
 

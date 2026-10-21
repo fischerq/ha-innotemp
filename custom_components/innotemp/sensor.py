@@ -33,6 +33,18 @@ from .api_parser import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Keys of a room's components that may hold this platform's items.
+CONTAINER_KEYS: list[str] = [
+    "display",
+    "param",
+    "mixer",
+    "pump",
+    "piseq",
+    "radiator",
+    "drink",
+    "main",
+]
+
 # Constants for ONOFFAUTO and ONOFF mapping are now imported from api_parser
 
 
@@ -117,21 +129,9 @@ async def async_setup_entry(
         str(config_data)[:500],
     )
 
-    # Keys for components within a room that might contain 'input', 'output', or direct sensor items
-    possible_sensor_containers_keys = [
-        "display",
-        "param",
-        "mixer",
-        "pump",
-        "piseq",
-        "radiator",
-        "drink",
-        "main",
-    ]
-
     sensor_entities_data = process_room_config_data(
         config_data=config_data,
-        possible_container_keys=possible_sensor_containers_keys,
+        possible_container_keys=CONTAINER_KEYS,
         item_processor=_create_sensor_entity_data,
     )
 

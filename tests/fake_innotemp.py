@@ -213,10 +213,13 @@ class FakeInnotemp:
         index = 0
         # Stream until the session expires (the real device presumably keeps
         # going; ending the stream lets tests exercise the reconnect path).
-        while sid in self.sessions and self.sse_frames:
-            await response.write(f"data: {self._frame(index)}\n\n".encode())
-            index += 1
-            await asyncio.sleep(self.sse_interval)
+        try:
+            while sid in self.sessions and self.sse_frames:
+                await response.write(f"data: {self._frame(index)}\n\n".encode())
+                index += 1
+                await asyncio.sleep(self.sse_interval)
+        except ConnectionResetError:
+            pass  # client went away
         return response
 
     async def value_save(self, request: web.Request) -> web.Response:

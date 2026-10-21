@@ -21,6 +21,17 @@ from .api_parser import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Keys of a room's components that may hold this platform's items.
+CONTAINER_KEYS: list[str] = [
+    "param",
+    "pump",
+    "piseq",
+    "mixer",
+    "drink",
+    "radiator",
+    "main",
+]
+
 
 def _create_switch_entity_data(
     item_data: Dict[str, Any],
@@ -81,19 +92,9 @@ async def async_setup_entry(
         str(config_data)[:500],
     )
 
-    possible_containers_keys = [
-        "param",
-        "pump",
-        "piseq",
-        "mixer",
-        "drink",
-        "radiator",
-        "main",
-    ]
-
     switch_entities_data = process_room_config_data(
         config_data=config_data,
-        possible_container_keys=possible_containers_keys,
+        possible_container_keys=CONTAINER_KEYS,
         item_processor=_create_switch_entity_data,
     )
 
