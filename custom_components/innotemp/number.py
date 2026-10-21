@@ -256,60 +256,8 @@ class InnotempNumber(InnotempCoordinatorEntity, NumberEntity):
             return None
 
     async def async_set_native_value(self, value: float) -> None:
-        """Update the current value."""
-        previous_api_value = None
-        if self.coordinator.data is not None:
-            previous_api_value = self.coordinator.data.get(self._param_id)
-
-        # The controller expects plain numbers; the web UI sends integers
-        # without a decimal point (val_new=21, not 21.0). Sending "21.0" for
-        # integral values risks rejection, so normalise those to ints.
-        api_value_to_send = int(value) if float(value).is_integer() else value
-
-        # Build the list of previous values to try: the last known value first
-        # (raw, plus an int-normalised form in case the device compares the
-        # exact string), then None as a fallback (sent as an empty string).
-        val_prev_options: list[Any] = []
-        if previous_api_value is not None:
-            val_prev_options.append(previous_api_value)
-            try:
-                prev_float = float(previous_api_value)
-                if prev_float.is_integer():
-                    normalized_prev = str(int(prev_float))
-                    if normalized_prev not in [str(v) for v in val_prev_options]:
-                        val_prev_options.append(normalized_prev)
-            except (ValueError, TypeError):
-                pass
-        val_prev_options.append(None)
-
-        _LOGGER.debug(
-            f"Sending command for {self.entity_id}: room {self._api_room_id}, param {self._param_id}, "
-            f"new_val {api_value_to_send}, prev_val_options {val_prev_options}"
-        )
-
-        try:
-            success = await self.coordinator.api_client.async_send_command(
-                room_id=self._api_room_id,
-                param=self._param_id,
-                val_new=api_value_to_send,
-                val_prev_options=val_prev_options,
-            )
-            if success:
-                _LOGGER.info(
-                    f"Successfully sent command for {self.entity_id} to set value to {value}."
-                )
-                # Optimistically reflect the new value immediately so the UI does
-                # not snap back while waiting for the next SSE push.
-                if self.coordinator.data is not None:
-                    self.coordinator.data[self._param_id] = value
-                self.async_write_ha_state()
-                await self.coordinator.async_request_refresh()
-            else:
-                _LOGGER.error(
-                    f"Failed to send command for {self.entity_id} to set value to {value}."
-                )
-        except Exception as e:
-            _LOGGER.error(
-                f"Error sending command for {self.entity_id} to set value to {value}: {e}",
-                exc_info=True,
-            )
+        """Write a new value; raises HomeAssistantError on failure."""
+        # The controller's web UI sends integers without a decimal point
+        # (val_new=21, not 21.0); keep fractional values as they are.
+        api_value = int(value) if float(value).is_integer() else value
+        await self._async_write_value(self._api_room_id, api_value)

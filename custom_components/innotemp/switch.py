@@ -197,68 +197,9 @@ class InnotempSwitch(InnotempCoordinatorEntity, SwitchEntity):
         await self._send_switch_command(False)
 
     async def _send_switch_command(self, turn_on: bool) -> None:
-        """Helper to send the turn on/off command."""
-        val_new = "1" if turn_on else "0"
-
-        # The controller uses ``val_prev`` for optimistic locking: a command is
-        # only applied when ``val_prev`` matches the parameter's *current* value.
-        # The current value must be read from the same var the entity displays
-        # (its own ``param_id``), exactly as ``is_on`` does.
-        previous_api_value: Any | None = None
-        if self.coordinator.data:
-            previous_api_value = self.coordinator.data.get(self._param_id)
-            if previous_api_value is None:
-                # Fall back to the mapped state var if the control var is not
-                # present in the live data for some reason.
-                state_var = self.coordinator.control_to_state_map.get(self._param_id)
-                if state_var:
-                    previous_api_value = self.coordinator.data.get(state_var)
-
-        val_prev_options: list[Any] = []
-        if previous_api_value is not None:
-            # Normalise to a clean "0"/"1" so the very first attempt carries the
-            # correct previous value (SSE may deliver "1.0", 1, etc.).
-            prev_int = coerce_api_int(previous_api_value)
-            val_prev_options.append("1" if prev_int == 1 else "0")
-
-        # Fallbacks: try both boolean states, then an empty val_prev.
-        for val in ("0", "1"):
-            if val not in val_prev_options:
-                val_prev_options.append(val)
-
-        if None not in val_prev_options:
-            val_prev_options.append(None)
-
-        _LOGGER.debug(
-            f"Sending command for {self.entity_id}: room_id {self._numeric_api_room_id}, param {self._param_id}, "
-            f"new_val {val_new}, prev_val_options {val_prev_options}"
+        """Send the turn on/off command; raises HomeAssistantError on failure."""
+        await self._async_write_value(
+            self._numeric_api_room_id,
+            "1" if turn_on else "0",
+            use_state_fallback=True,
         )
-
-        try:
-            success = await self.coordinator.api_client.async_send_command(
-                room_id=self._numeric_api_room_id,
-                param=self._param_id,
-                val_new=val_new,
-                val_prev_options=val_prev_options,
-            )
-            if success:
-                _LOGGER.info(
-                    f"Successfully sent command for {self.entity_id} to turn {'ON' if turn_on else 'OFF'}."
-                )
-                # Optimistically reflect the new state immediately. The SSE
-                # stream only republishes values periodically, and a plain
-                # refresh re-emits the (unchanged) cached data, which would make
-                # the toggle snap back to its old position.
-                if self.coordinator.data is not None:
-                    self.coordinator.data[self._param_id] = val_new
-                self.async_write_ha_state()
-                await self.coordinator.async_request_refresh()
-            else:
-                _LOGGER.error(
-                    f"Failed to send command for {self.entity_id} to turn {'ON' if turn_on else 'OFF'}."
-                )
-        except Exception as e:
-            _LOGGER.error(
-                f"Error sending command for {self.entity_id} to turn {'ON' if turn_on else 'OFF'}: {e}",
-                exc_info=True,
-            )

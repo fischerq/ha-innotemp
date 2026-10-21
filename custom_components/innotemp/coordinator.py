@@ -1,6 +1,9 @@
 """DataUpdateCoordinator for Innotemp."""
 
 from typing import Any, Dict
+
+from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
@@ -8,6 +11,7 @@ from homeassistant.helpers.update_coordinator import (
 
 # from homeassistant.util import slugify # For fallback component ID - Assuming this failed
 import re  # For local slugify
+from .api import InnotempApiError
 from .const import DOMAIN
 
 import logging
@@ -32,21 +36,48 @@ def _local_slugify(text: str) -> str:
     return text
 
 
+def entity_unique_id_prefix(config_entry) -> str:
+    """Return the stable prefix for entity unique ids of a config entry.
+
+    The entry's unique id (the normalised host, set by the config flow and by
+    the 1.1 -> 1.2 migration) is used when present. Entries without one fall
+    back to ``entry_id``, which never changes for the life of the entry.
+    Previously ``config_entry.unique_id`` was always ``None`` and every entity
+    was registered as ``None_<param>``.
+    """
+    return config_entry.unique_id or config_entry.entry_id
+
+
+def entity_unique_id(config_entry, param: Any) -> str:
+    """Return the unique id for the entity of ``param`` in ``config_entry``."""
+    return f"{entity_unique_id_prefix(config_entry)}_{param}"
+
+
 class InnotempDataUpdateCoordinator(DataUpdateCoordinator):
     """Innotemp data update coordinator."""
 
-    def __init__(self, hass, logger, api_client):
+    def __init__(self, hass, logger, api_client, config_entry=None):
         """Initialize coordinator."""
-        super().__init__(
-            hass,
-            logger,
-            name="Innotemp",
-        )
+        kwargs = {"config_entry": config_entry} if config_entry is not None else {}
+        super().__init__(hass, logger, name="Innotemp", **kwargs)
         self.api_client = api_client
         self.control_to_state_map: Dict[str, str] = {}
         self.sse_task = hass.async_create_task(
-            api_client.async_sse_connect(self.async_set_updated_data)
+            api_client.async_sse_connect(self.async_handle_sse_update)
         )
+
+    @callback
+    def async_handle_sse_update(self, update: Dict[str, Any]) -> None:
+        """Merge one SSE message into the current data.
+
+        An SSE message only carries the live signals, not the settings that
+        were read from roomconf at startup. Replacing the whole dict (which
+        ``async_set_updated_data`` does) wiped every value that is not a live
+        signal, so number/select entities went unknown after the first push.
+        """
+        merged = dict(self.data) if self.data else {}
+        merged.update(update)
+        self.async_set_updated_data(merged)
 
     async def _async_update_data(self):
         """Fetch data from API endpoint.
@@ -69,7 +100,9 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
         self._config_entry = config_entry
         self._entity_config = entity_config
         self._attr_name = entity_config.get("label")
-        self._attr_unique_id = f"{config_entry.unique_id}_{entity_config.get('param')}"
+        self._attr_unique_id = entity_unique_id(
+            config_entry, entity_config.get("param")
+        )
 
     @property
     def device_info(self):
@@ -176,3 +209,58 @@ class InnotempCoordinatorEntity(CoordinatorEntity):
             )
             return None
         return value
+
+    def _get_current_value_for_write(self, use_state_fallback: bool) -> Any | None:
+        """Return the last known value of this entity's param (for val_prev)."""
+        data = self.coordinator.data or {}
+        param_id = getattr(self, "_param_id", None)
+        value = data.get(param_id)
+        if value is None and use_state_fallback:
+            state_var = self.coordinator.control_to_state_map.get(param_id)
+            if state_var:
+                value = data.get(state_var)
+        return value
+
+    async def _async_write_value(
+        self,
+        room_id: Any,
+        val_new: Any,
+        *,
+        use_state_fallback: bool = False,
+    ) -> None:
+        """Write ``val_new`` to the controller and reflect it optimistically.
+
+        ``val_prev`` is the value the entity currently shows. The controller
+        uses it for optimistic locking, so it is sent exactly once: guessing
+        other values would defeat the check (and could overwrite a change made
+        on the device in the meantime). Any failure is raised as
+        HomeAssistantError so the user sees it in the UI instead of the
+        toggle silently snapping back.
+        """
+        param_id = self._param_id
+        val_prev = self._get_current_value_for_write(use_state_fallback)
+        if val_prev is None:
+            _LOGGER.warning(
+                "%s (%s): current value unknown, sending empty val_prev",
+                self.entity_id,
+                param_id,
+            )
+        try:
+            await self.coordinator.api_client.async_send_command(
+                room_id=room_id,
+                param=param_id,
+                val_new=val_new,
+                val_prev=val_prev,
+            )
+        except InnotempApiError as err:
+            raise HomeAssistantError(
+                f"Innotemp controller did not accept {val_new!r} for "
+                f"{self.name or param_id}: {err}"
+            ) from err
+
+        # Optimistically reflect the new value immediately: the SSE stream only
+        # republishes periodically (and not at all for settings that are not
+        # live signals), so the UI would otherwise snap back.
+        if self.coordinator.data is not None:
+            self.coordinator.data[param_id] = val_new
+        self.async_write_ha_state()

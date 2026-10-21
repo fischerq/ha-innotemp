@@ -9,14 +9,19 @@ These cover the command (write) path, which was broken in several ways:
   numeric room id required by ``value.save.php``.
 * No optimistic state update meant the UI snapped back to the old value after a
   successful command.
+* ``val_prev`` used to be brute-forced over 0/1/'' which defeats the
+  controller's optimistic locking; now exactly the known current value is sent.
+* Failed writes were only logged; they now raise HomeAssistantError.
 """
 
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant import config_entries
 
+from custom_components.innotemp.api import InnotempCommandError
 from custom_components.innotemp.coordinator import InnotempDataUpdateCoordinator
 from custom_components.innotemp.switch import InnotempSwitch
 from custom_components.innotemp.select import InnotempInputSelect
@@ -66,9 +71,9 @@ async def test_switch_uses_own_value_for_val_prev_and_updates_state(
     assert kwargs["room_id"] == 3
     assert kwargs["param"] == param
     assert kwargs["val_new"] == "0"
-    # First previous value tried must match the actual current state ("1"),
-    # not a blind "0" guess.
-    assert kwargs["val_prev_options"][0] == "1"
+    # val_prev is exactly the current state, sent once (no guessing).
+    assert kwargs["val_prev"] == "1"
+    coordinator.api_client.async_send_command.assert_awaited_once()
     # Optimistic update: state reflects the change immediately.
     assert coordinator.data[param] == "0"
     assert switch.is_on is False
@@ -99,7 +104,8 @@ async def test_select_uses_own_value_for_val_prev_and_updates_state(
     assert kwargs["room_id"] == 3
     assert kwargs["param"] == param
     assert kwargs["val_new"] == 2  # Auto
-    assert kwargs["val_prev_options"][0] == 1  # current value first
+    assert kwargs["val_prev"] == 1  # current value
+    coordinator.api_client.async_send_command.assert_awaited_once()
     assert coordinator.data[param] == 2
     assert select.current_option == "Auto"
 
@@ -128,7 +134,7 @@ async def test_number_sends_numeric_room_id_and_updates_state(hass: HomeAssistan
     # Integral floats are sent as plain ints (val_new=21, not 21.0), matching
     # what the controller's own web UI sends.
     assert kwargs["val_new"] == 21
-    assert kwargs["val_prev_options"][0] == "18"
+    assert kwargs["val_prev"] == "18"
     assert coordinator.data[param] == 21
     assert number.native_value == 21.0
 
@@ -169,8 +175,8 @@ def test_switch_is_on_handles_mixed_value_formats(api_value, expected):
 
 
 @pytest.mark.asyncio
-async def test_switch_normalizes_float_prev_value(hass: HomeAssistant):
-    """A float-formatted current value must be normalised for val_prev."""
+async def test_switch_passes_raw_prev_value(hass: HomeAssistant):
+    """The raw known value is passed; the API client formats it ("1.0" -> "1")."""
     param = "room3_param1_entry1"
     coordinator = _make_coordinator({param: "1.0"})  # currently ON, float format
     switch = _make_switch(coordinator, param)
@@ -178,7 +184,25 @@ async def test_switch_normalizes_float_prev_value(hass: HomeAssistant):
     await switch.async_turn_off()
 
     kwargs = coordinator.api_client.async_send_command.call_args.kwargs
-    assert kwargs["val_prev_options"][0] == "1"
+    assert kwargs["val_prev"] == "1.0"
+
+
+@pytest.mark.asyncio
+async def test_switch_falls_back_to_mapped_state_var_for_val_prev(
+    hass: HomeAssistant,
+):
+    """If the control var has no value yet, the mapped state var is used."""
+    param = "room3_param1_entry1"
+    coordinator = _make_coordinator({"room3_state": "0"})
+    coordinator.control_to_state_map = {param: "room3_state"}
+    switch = _make_switch(coordinator, param)
+
+    await switch.async_turn_on()
+
+    kwargs = coordinator.api_client.async_send_command.call_args.kwargs
+    assert kwargs["val_prev"] == "0"
+    assert kwargs["val_new"] == "1"
+    assert switch.is_on is True
 
 
 @pytest.mark.parametrize(
@@ -230,14 +254,33 @@ async def test_select_normalizes_float_prev_value(hass: HomeAssistant):
     await select.async_select_option("Auto")
 
     kwargs = coordinator.api_client.async_send_command.call_args.kwargs
-    assert kwargs["val_prev_options"][0] == 1
+    assert kwargs["val_prev"] == "1.0"
 
 
 @pytest.mark.asyncio
-async def test_number_keeps_fractional_value_and_prev_fallbacks(
+async def test_select_invalid_option_raises(hass: HomeAssistant):
+    param = "room3_param1_e2"
+    coordinator = _make_coordinator({param: "1"})
+    select = InnotempInputSelect(
+        hass,
+        coordinator,
+        _config_entry(),
+        ROOM,
+        3,
+        COMP,
+        param,
+        {"unit": "ONOFFAUTO", "var": param, "label": "Mode"},
+    )
+    with pytest.raises(HomeAssistantError):
+        await select.async_select_option("Turbo")
+    coordinator.api_client.async_send_command.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_number_keeps_fractional_value(
     hass: HomeAssistant,
 ):
-    """Fractional values are sent as-is; prev options include normalised form."""
+    """Fractional values are sent as-is; val_prev is the known value."""
     param = "room3_param1_n1"
     coordinator = _make_coordinator({param: "18.0"})
     number = InnotempNumber(
@@ -254,14 +297,13 @@ async def test_number_keeps_fractional_value_and_prev_fallbacks(
 
     kwargs = coordinator.api_client.async_send_command.call_args.kwargs
     assert kwargs["val_new"] == 21.5
-    # Raw previous value first, then the int-normalised form, then the
-    # empty-string fallback.
-    assert kwargs["val_prev_options"] == ["18.0", "18", None]
+    assert kwargs["val_prev"] == "18.0"
+    coordinator.api_client.async_send_command.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_number_without_prev_value_still_sends_command(hass: HomeAssistant):
-    """With no known previous value only the empty fallback is offered."""
+    """With no known previous value, val_prev is None (sent as '')."""
     param = "room3_param1_n1"
     coordinator = _make_coordinator({})
     number = InnotempNumber(
@@ -277,19 +319,44 @@ async def test_number_without_prev_value_still_sends_command(hass: HomeAssistant
     await number.async_set_native_value(21.0)
 
     kwargs = coordinator.api_client.async_send_command.call_args.kwargs
-    assert kwargs["val_prev_options"] == [None]
+    assert kwargs["val_prev"] is None
 
 
 @pytest.mark.asyncio
 async def test_switch_failed_command_does_not_update_state(hass: HomeAssistant):
-    """A rejected command must not optimistically flip the state."""
+    """A rejected command raises and must not optimistically flip the state."""
     param = "room3_param1_entry1"
     coordinator = _make_coordinator({param: "1"})
-    coordinator.api_client.async_send_command = AsyncMock(return_value=False)
+    coordinator.api_client.async_send_command = AsyncMock(
+        side_effect=InnotempCommandError("rejected")
+    )
     switch = _make_switch(coordinator, param)
 
-    await switch.async_turn_off()
+    with pytest.raises(HomeAssistantError, match="rejected"):
+        await switch.async_turn_off()
 
     assert coordinator.data[param] == "1"
     assert switch.is_on is True
     switch.async_write_ha_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_number_failed_command_raises(hass: HomeAssistant):
+    param = "room3_param1_n1"
+    coordinator = _make_coordinator({param: "18"})
+    coordinator.api_client.async_send_command = AsyncMock(
+        side_effect=InnotempCommandError("nope")
+    )
+    number = InnotempNumber(
+        coordinator,
+        _config_entry(),
+        ROOM,
+        COMP,
+        param,
+        {"unit": "°C", "var": param, "label": "Setpoint"},
+    )
+    number.async_write_ha_state = MagicMock()
+
+    with pytest.raises(HomeAssistantError):
+        await number.async_set_native_value(21.0)
+    assert coordinator.data[param] == "18"

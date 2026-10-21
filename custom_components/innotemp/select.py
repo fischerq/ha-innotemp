@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -205,76 +206,13 @@ class InnotempInputSelect(InnotempCoordinatorEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         """Change the selected option."""
         if option not in ONOFFAUTO_OPTION_TO_API_VALUE:
-            _LOGGER.error(
-                f"Invalid option '{option}' selected for {self.entity_id}. Valid options: {ONOFFAUTO_OPTIONS_LIST}"
-            )
-            return
-
-        new_api_value = ONOFFAUTO_OPTION_TO_API_VALUE[option]
-        previous_api_value: Any | None = None
-
-        # Get the last known value. The controller validates ``val_prev`` against
-        # the parameter's *current* value (optimistic locking), so it must be read
-        # from this entity's own ``param_id`` -- the same var ``current_option``
-        # displays. Previously this used the *mapped state var* from
-        # ``control_to_state_map``, a different (and often empty) signal, so the
-        # first ``val_prev`` was wrong and the change was silently dropped.
-        if self.coordinator.data:
-            previous_api_value = self.coordinator.data.get(self._param_id)
-            if previous_api_value is None:
-                state_var = self.coordinator.control_to_state_map.get(self._param_id)
-                if state_var:
-                    previous_api_value = self.coordinator.data.get(state_var)
-
-        # Build the list of previous values to try, normalising the current value
-        # to its integer API form so the first attempt carries the correct prev
-        # (SSE may deliver "1.0", which int() alone cannot parse).
-        val_prev_options = []
-        if previous_api_value is not None:
-            prev_int = coerce_api_int(previous_api_value)
-            val_prev_options.append(
-                prev_int if prev_int is not None else previous_api_value
+            raise HomeAssistantError(
+                f"Invalid option '{option}' for {self.entity_id}; valid options: "
+                f"{ONOFFAUTO_OPTIONS_LIST}"
             )
 
-        # Add all possible enum values, ensuring the last known is first.
-        for val in ONOFFAUTO_OPTION_TO_API_VALUE.values():
-            if val not in val_prev_options:
-                val_prev_options.append(val)
-
-        # Finally, add None as a fallback, which will be sent as an empty string
-        if None not in val_prev_options:
-            val_prev_options.append(None)
-
-        _LOGGER.debug(
-            f"Sending command for {self.entity_id}: room_id (numeric) {self._numeric_api_room_id}, param {self._param_id}, "
-            f"new_val {new_api_value} (from option '{option}'), prev_val_options {val_prev_options}"
+        await self._async_write_value(
+            self._numeric_api_room_id,
+            ONOFFAUTO_OPTION_TO_API_VALUE[option],
+            use_state_fallback=True,
         )
-
-        try:
-            success = await self.coordinator.api_client.async_send_command(
-                room_id=self._numeric_api_room_id,
-                param=self._param_id,
-                val_new=new_api_value,
-                val_prev_options=val_prev_options,
-            )
-            if success:
-                _LOGGER.info(
-                    f"Successfully sent command for {self.entity_id} to set option to '{option}'."
-                )
-                # Optimistically reflect the new option immediately so the UI does
-                # not snap back while waiting for the next SSE push.
-                if self.coordinator.data is not None:
-                    self.coordinator.data[self._param_id] = new_api_value
-                self.async_write_ha_state()
-                await self.coordinator.async_request_refresh()
-            else:
-                _LOGGER.error(
-                    f"Failed to send command for {self.entity_id} to set option to '{option}'."
-                )
-        except Exception as e:
-            _LOGGER.error(
-                f"Error sending command for {self.entity_id} to set option to '{option}': {e}",
-                exc_info=True,
-            )
-
-        # self.async_write_ha_state() # State will be updated by coordinator
