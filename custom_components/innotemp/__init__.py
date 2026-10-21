@@ -8,6 +8,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
@@ -103,6 +104,40 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+@callback
+def _async_register_devices(
+    hass: HomeAssistant, entry: ConfigEntry, config_data: dict
+) -> None:
+    """Create the controller device and one device per room.
+
+    Entity device_info points at these via ``via_device``; without them HA
+    warns that the parent device does not exist (and will stop accepting it).
+    """
+    dev_reg = dr.async_get(hass)
+    dev_reg.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Innotemp Heating Controller",
+        manufacturer="Innotemp",
+    )
+    for rooms in config_data.values():
+        if not isinstance(rooms, list):
+            continue
+        for room in rooms:
+            attrs = room.get("@attributes", {}) if isinstance(room, dict) else {}
+            room_var = attrs.get("var")
+            if not room_var:
+                continue
+            dev_reg.async_get_or_create(
+                config_entry_id=entry.entry_id,
+                identifiers={(DOMAIN, entry.entry_id, room_var)},
+                name=attrs.get("label") or room_var,
+                manufacturer="Innotemp",
+                model=attrs.get("type") or "Room",
+                via_device=(DOMAIN, entry.entry_id),
+            )
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Innotemp Heating Controller from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -136,14 +171,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await api_client.async_login()
         config_data = await api_client.async_get_config()
     except InnotempApiError as err:
-        await session.close()
-        # Raising ConfigEntryNotReady makes HA retry with backoff, so an
+        # (The session is detached by HA when setup fails.) Raising ConfigEntryNotReady makes HA retry with backoff, so an
         # integration whose controller is offline at boot recovers on its own.
         raise ConfigEntryNotReady(
             f"Cannot connect to Innotemp controller at {host}: {err}"
         ) from err
     if not config_data:
-        await session.close()
         raise ConfigEntryNotReady(
             f"Innotemp controller at {host} returned no configuration"
         )
@@ -164,6 +197,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "session": session,
     }
 
+    _async_register_devices(hass, entry, config_data)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Data is pushed via SSE; _async_update_data just returns the current data.
@@ -173,7 +208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry, stopping the SSE listener and closing the session.
+    """Unload a config entry, stopping the SSE listener.
 
     Without this, removing/reloading the integration left the SSE background
     task running forever and re-adding the entry spawned a second listener.
@@ -194,10 +229,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 sse_wrapper.cancel()
 
             await coordinator.async_shutdown()
-
-            session = data.get("session")
-            if session:
-                await session.close()
+            # The aiohttp session was created during entry setup, so HA
+            # detaches it automatically once the entry is unloaded.
         _LOGGER.info("[innotemp] Entry %s unloaded", entry.entry_id)
 
     return unload_ok

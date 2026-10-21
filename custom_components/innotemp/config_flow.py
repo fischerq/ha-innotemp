@@ -74,9 +74,11 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> dict[str, str]:
         """Try to log in; return a form errors dict (empty on success)."""
         # Unsafe cookie jar: the controller's PHPSESSID cookie must be kept
-        # even for bare-IP hosts. Matches async_setup_entry.
+        # even for bare-IP hosts. Matches async_setup_entry. auto_cleanup is
+        # off because this short-lived session is detached right after use
+        # (HA's shared connector must not be closed).
         session = async_create_clientsession(
-            self.hass, cookie_jar=aiohttp.CookieJar(unsafe=True)
+            self.hass, auto_cleanup=False, cookie_jar=aiohttp.CookieJar(unsafe=True)
         )
         api_client = InnotempApiClient(session, host, username, password)
         try:
@@ -91,5 +93,5 @@ class InnotempConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             _LOGGER.exception("Unexpected error logging in to %s", host)
             return {"base": "unknown"}
         finally:
-            await session.close()
+            session.detach()
         return {}
